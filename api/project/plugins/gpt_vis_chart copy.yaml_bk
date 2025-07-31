@@ -1,0 +1,82 @@
+name: gpt_vis_chart
+enabled: true
+required: false
+description: >-
+  Generate GPT-Vis compatible charts with automatic data format processing based on chart type.
+  Supports 7 chart types: line, column, area, bar, scatter, dual-axes, pie.
+  Data size limit: 100 records maximum for optimal performance, summarize data before using this plugin
+  **Input data must be a Python list of dictionaries, not a Pandas DataFrame. Use `df.to_dict(orient="records")` before passing if needed.**
+
+examples: >-
+  # Line chart - auto convert to {time, value, group?} format
+  data = [{"date": "2023-01", "sales": 100}, {"date": "2023-02", "sales": 120}]
+  markdown, summary = gpt_vis_chart(data, chart_type="line", title="Sales Trend", axisXTitle="Month", axisYTitle="Sales Amount")
+    
+  # Column chart - auto convert to {category, value, group?} format
+  data = [{"product": "A", "revenue": 1000}, {"product": "B", "revenue": 1500}]
+  markdown, summary = gpt_vis_chart(data, chart_type="column", title="Product Revenue", axisXTitle="Product", axisYTitle="Revenue")
+  
+  # Area chart - auto convert to {time, value, group?} format
+  data = [{"month": "Jan", "visitors": 1000}, {"month": "Feb", "visitors": 1200}]
+  markdown, summary = gpt_vis_chart(data, chart_type="area", title="Website Visitors", axisXTitle="Month", axisYTitle="Visitors")
+  
+  # Bar chart - auto convert to {category, value, group?} format
+  data = [{"department": "Sales", "employees": 25}, {"department": "Marketing", "employees": 15}]
+  markdown, summary = gpt_vis_chart(data, chart_type="bar", title="Employees by Department", axisXTitle="Number of Employees", axisYTitle="Department")
+  
+  # Scatter chart - auto convert to {x, y} format
+  data = [{"height": 170, "weight": 65}, {"height": 180, "weight": 75}]
+  markdown, summary = gpt_vis_chart(data, chart_type="scatter", title="Height vs Weight", axisXTitle="Height (cm)", axisYTitle="Weight (kg)")
+    
+  # Dual-axes chart - special format with categories and series
+  data = [{"month": "Jan", "sales": 1000, "profit": 200}, {"month": "Feb", "sales": 1200, "profit": 250}]
+  markdown, summary = gpt_vis_chart(data, chart_type="dual-axes", title="Sales vs Profit", axisXTitle="Month")
+  
+  # Pie chart - auto convert to {category, value} format
+  data = [{"region": "North", "sales": 1000}, {"region": "South", "sales": 800}, {"region": "East", "sales": 600}]
+  markdown, summary = gpt_vis_chart(data, chart_type="pie", title="Sales by Region")
+
+parameters:
+  - name: data
+    type: List[Dict]
+    required: true
+    description: Raw data list where each element is a dictionary. Plugin will automatically convert to GPT-Vis required format based on chart_type.Maximum 100 records allowed. **Do NOT pass a Pandas DataFrame, convert using `df.to_dict(orient='records')` first.**
+
+  - name: chart_type
+    type: str
+    required: true
+    description: Chart type, must be one of ['line', 'column', 'area', 'bar', 'scatter', 'dual-axes', 'pie'].
+  
+  - name: title
+    type: str
+    required: false
+    description: Chart title.
+  
+  - name: group
+    type: bool
+    required: false
+    description: Enable grouping (applicable for bar/column charts).
+  
+  - name: stack
+    type: bool
+    required: false
+    description: Enable stacking (applicable for area/bar/column charts).
+
+  - name: axisXTitle
+    type: str
+    required: false
+    description: X-axis title.
+  
+  - name: axisYTitle
+    type: str
+    required: false
+    description: Y-axis title.
+
+returns:
+  - name: markdown_content
+    type: str
+    description: GPT-Vis compatible markdown content with vis-chart code block.
+  
+  - name: summary
+    type: str
+    description: Chart generation summary.

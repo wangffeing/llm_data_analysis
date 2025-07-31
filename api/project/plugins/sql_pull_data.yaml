@@ -1,0 +1,29 @@
+name: sql_pull_data
+enabled: true
+required: true
+description: >-
+  Pull data from a SQL database using a user-provided SQL query. 
+  This plugin is explicitly triggered when the user provides a valid SQL query to fetch data.
+  The SQL query must follow these restrictions:
+  1. Must specify explicit column names instead of using 'SELECT *'
+  2. Must include WHERE clause or other filtering conditions
+  3. Prefer to generate statistical results using aggregation functions (COUNT, SUM, AVG, etc.)
+examples: |-
+  df, description = sql_pull_data("SELECT department, COUNT(*) as employee_count, AVG(salary) as avg_salary FROM employees WHERE hire_date >= '20230101' GROUP BY department")
+
+parameters:
+  - name: sql
+    type: str
+    required: true
+    description: >-
+      This is the SQL query provided by the user to fetch data from the database.
+      Ensure the SQL syntax is valid and explicitly includes any required columns or conditions.
+      Avoid wrapping the query in quotes or code blocks.
+
+returns:
+  - name: df
+    type: pandas.DataFrame
+    description: This is the dataframe containing the data from the database.
+  - name: description
+    type: str
+    description: This is a string describing the data pulled from the database.

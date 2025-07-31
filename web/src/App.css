@@ -1,0 +1,108 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 自定义样式 */
+.ant-conversations-item.selected {
+  background: #e6f7ff !important;
+  border: 1px solid #1677ff !important;
+}
+
+.ant-conversations-item:hover {
+  background: #f5f5f5 !important;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 思维链内容换行样式 */
+.thought-content {
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-width: 100%;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* 思维链描述样式 */
+.thought-description {
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-width: 100%;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  font-size: 14px;
+}
+
+/* 针对 ReactMarkdown 组件的样式优化 */
+.thought-content p,
+.thought-description p {
+  margin: 0;
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.thought-content pre,
+.thought-description pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.thought-content code,
+.thought-description code {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}

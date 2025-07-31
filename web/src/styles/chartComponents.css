@@ -1,0 +1,60 @@
+/* GPT-Vis 图表组件样式 */
+.gpt-vis-container {
+  margin: 16px 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.gpt-vis-content {
+  padding: 16px;
+  min-height: 200px;
+}
+
+.gpt-vis-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.gpt-vis-loading p {
+  margin-top: 16px;
+  color: #666;
+  font-size: 14px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .gpt-vis-container {
+    margin: 8px 0;
+  }
+  
+  .gpt-vis-content {
+    padding: 12px;
+  }
+}
+
+/* GPT-Vis 图表内容样式 */
+.gpt-vis-content .vis-chart {
+  width: 100%;
+  height: auto;
+  min-height: 300px;
+}
+
+.gpt-vis-content .vis-chart canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 错误状态样式 */
+.gpt-vis-container .ant-alert {
+  border-radius: 6px;
+}
+
+/* 加载状态样式 */
+.gpt-vis-container .ant-spin {
+  color: #1890ff;
+}

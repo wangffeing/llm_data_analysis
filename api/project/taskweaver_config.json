@@ -1,0 +1,21 @@
+{
+    "llm.api_type": "qwen",
+    "llm.model": "qwen3-14b",
+    "llm.api_key": "sk-081340f2de3547508f206da7ef40376e",
+    "execution_service.kernel_mode": "local",
+    "code_generator.enable_auto_plugin_selection": "false",
+    "code_interpreter.code_verification_on": "false",
+    "code_interpreter.allowed_modules": [
+        "pandas", "matplotlib", "numpy", "sklearn", "scipy", 
+        "seaborn", "datetime", "typing", "json", "plotly",
+        "wordcloud", "textblob", "jieba", "openpyxl", "xlrd",
+        "snownlp", "folium", "networkx", "statsmodels"
+    ],
+    "logging.log_file": "taskweaver.log",
+    "logging.log_folder": "logs",
+    "logging.log_level": "INFO",
+    "planner.prompt_compression": "true",
+    "code_generator.prompt_compression": "true",
+    "session.max_internal_chat_round_num": 20,
+    "session.roles": ["planner", "code_interpreter", "recepta"]
+}

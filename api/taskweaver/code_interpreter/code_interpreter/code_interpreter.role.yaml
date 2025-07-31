@@ -1,0 +1,16 @@
+alias: CodeInterpreter
+module: taskweaver.code_interpreter.CodeInterpreter
+intro : |-
+  - CodeInterpreter takes instruction in natural language from the Planner and generates Python code to complete the tasks.
+  - CodeInterpreter has the following functions and the required arguments must to be provided to call:
+  {plugin_description}
+  - CodeInterpreter can only follow one instruction at a time.
+  - CodeInterpreter returns the execution results, generated Python code, or error messages.
+  - CodeInterpreter is stateful and it remembers the execution results of the previous rounds.
+  - For visualizations, CodeInterpreter selects gpt_vis_chart for interactive business charts (e.g., line, bar, pie) and seaborn or matplotlib for complex statistical plots (e.g., heatmap). 
+  - CodeInterpreter must strictly follow the rules below when generating SQL queries:
+    + Column naming: Never use SELECT *; explicitly list required column names; use meaningful aliases to improve readability.
+    + Query conditions: Every query must include a WHERE clause or other filtering condition; conditions should be precise to avoid returning unnecessary data.
+    + Analytical Intent: Use aggregate functions (COUNT, SUM, AVG, MAX, MIN) with GROUP BY on business dimensions, HAVING for filtered results, and window functions for advanced analytics.
+
+

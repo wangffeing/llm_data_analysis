@@ -1,0 +1,242 @@
+# -*- coding: utf-8 -*-
+import pandas as pd
+import numpy as np
+import json
+from typing import Any, Dict, Optional, Tuple, List, Union
+from taskweaver.plugin import Plugin, register_plugin
+from decimal import Decimal
+
+# Maximum allowed data points for chart generation
+MAX_DATA_POINTS = 100
+
+def json_converter(o: Any) -> Any:
+    if isinstance(o, Decimal): return float(o)
+    if isinstance(o, np.integer): return int(o)
+    if isinstance(o, np.floating): return float(o)
+    if isinstance(o, np.ndarray): return o.tolist()
+    if isinstance(o, pd.Timestamp): return o.isoformat()
+    if pd.isna(o): return None
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+
+@register_plugin
+class gpt_vis_chart(Plugin):
+    def __call__(
+            self,
+            data: List[Dict],
+            chart_type: str,
+            title: Optional[str] = None,
+            group: Optional[bool] = None,
+            stack: Optional[bool] = None,
+            axisXTitle: Optional[str] = None,
+            axisYTitle: Optional[str] = None,
+    ) -> Tuple[str, str]:
+        
+        if not data:
+            raise ValueError("Data cannot be empty.")
+        
+        # Check data size limit
+        if len(data) > MAX_DATA_POINTS:
+            raise ValueError(
+                f"Data size ({len(data)} records) exceeds maximum limit ({MAX_DATA_POINTS}). "
+                f"Please summarize your data before using this plugin to ensure better performance and visualization quality."
+            )
+        
+        # Validate chart type
+        supported_types = ['line', 'column', 'area', 'bar', 'scatter', 'dual-axes', 'pie']
+        if chart_type not in supported_types:
+            raise ValueError(f"Unsupported chart type: {chart_type}. Supported types: {supported_types}")
+        
+        # Process data format based on chart type
+        processed_data = self._process_data_by_type(data, chart_type)
+        
+        # Build chart configuration
+        chart_config = {
+            "type": chart_type
+        }
+        
+        # For dual-axes, data structure is special
+        if chart_type == 'dual-axes':
+            chart_config.update(processed_data)
+        else:
+            chart_config["data"] = processed_data
+        
+        # Add optional parameters
+        if title:
+            chart_config["title"] = title
+        if group is not None:
+            chart_config["group"] = group
+        if stack is not None:
+            chart_config["stack"] = stack
+        if axisXTitle:
+            chart_config["axisXTitle"] = axisXTitle
+        if axisYTitle:
+            chart_config["axisYTitle"] = axisYTitle
+        
+        # Generate output
+        filename = f'''vis-chart_{chart_config["type"]}_{chart_config.get("title", "untitled")}.vis'''
+        markdown_content = self._generate_markdown(chart_config, filename)
+        summary = self._generate_summary(chart_config, len(data), filename)
+        
+        return markdown_content, summary
+    
+    def _process_data_by_type(self, data: List[Dict], chart_type: str) -> Union[List[Dict], List, Dict]:
+        """Process data format based on chart type"""
+        
+        if chart_type in ['line', 'area']:
+            # Line and area charts need: {time, value, group?}
+            return self._convert_to_time_value_format(data)
+        
+        elif chart_type in ['column', 'bar']:
+            # Column and bar charts need: {category, value, group?}
+            return self._convert_to_category_value_format(data)
+        
+        elif chart_type == 'scatter':
+            # Scatter chart needs: {x, y}
+            return self._convert_to_xy_format(data)
+
+        elif chart_type == 'dual-axes':
+            # Dual-axes chart needs special format: {categories: [], series: []}
+            return self._convert_to_dual_axes_format(data)
+        
+        elif chart_type == 'pie':
+            # Pie chart needs: {category, value}
+            return self._convert_to_category_value_format(data)
+        
+        else:
+            # Return original data by default
+            return data
+    
+    def _convert_to_time_value_format(self, data: List[Dict]) -> List[Dict]:
+        """Convert to time-value format {time, value, group?}"""
+        result = []
+        
+        for item in data:
+            keys = list(item.keys())
+            converted_item = {}
+            
+            # First field as time
+            if len(keys) >= 1:
+                converted_item["time"] = item[keys[0]]
+            
+            # Second field as value
+            if len(keys) >= 2:
+                converted_item["value"] = item[keys[1]]
+            else:
+                converted_item["value"] = 0
+            
+            # Third field as group (if exists)
+            if len(keys) >= 3:
+                converted_item["group"] = item[keys[2]]
+            
+            result.append(converted_item)
+        
+        return result
+    
+    def _convert_to_category_value_format(self, data: List[Dict]) -> List[Dict]:
+        """Convert to category-value format {category, value, group?}"""
+        result = []
+        
+        for item in data:
+            keys = list(item.keys())
+            converted_item = {}
+            
+            # First field as category
+            if len(keys) >= 1:
+                converted_item["category"] = item[keys[0]]
+            
+            # Second field as value
+            if len(keys) >= 2:
+                converted_item["value"] = item[keys[1]]
+            else:
+                converted_item["value"] = 0
+            
+            # Third field as group (if exists)
+            if len(keys) >= 3:
+                converted_item["group"] = item[keys[2]]
+            
+            result.append(converted_item)
+        
+        return result
+    
+    def _convert_to_xy_format(self, data: List[Dict]) -> List[Dict]:
+        """Convert to X-Y coordinate format {x, y}"""
+        result = []
+        
+        for item in data:
+            keys = list(item.keys())
+            converted_item = {}
+            
+            # First field as x
+            if len(keys) >= 1:
+                converted_item["x"] = item[keys[0]]
+            
+            # Second field as y
+            if len(keys) >= 2:
+                converted_item["y"] = item[keys[1]]
+            else:
+                converted_item["y"] = 0
+            
+            result.append(converted_item)
+        
+        return result
+    
+    def _convert_to_dual_axes_format(self, data: List[Dict]) -> Dict:
+        """Convert to dual-axes format {categories: [], series: []}"""
+        if not data:
+            return {"categories": [], "series": []}
+        
+        keys = list(data[0].keys())
+        categories = [item.get(keys[0], "") for item in data] if len(keys) >= 1 else []
+        series = []
+        if len(keys) >= 2:
+            series.append({
+                "type": "column",
+                "data": [item.get(keys[1], 0) for item in data]
+            })
+        
+        if len(keys) >= 3:
+            series.append({
+                "type": "line",
+                "data": [item.get(keys[2], 0) for item in data]
+            })
+        
+        return {
+            "categories": categories,
+            "series": series
+        }
+    
+    def _generate_markdown(self, chart_config: Dict[str, Any], filename: str) -> str:
+        """Generate markdown content"""
+        chart_json = json.dumps(chart_config, ensure_ascii=False, default=json_converter)
+        json_content = f"```vis-chart\n{chart_json}\n```"
+        
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(json_content)
+        except Exception as e:
+            print(f"Warning: Could not write to file {filename}: {e}")
+        
+        return json_content
+    
+    def _generate_summary(self, chart_config: Dict[str, Any], record_count: int, filename: str) -> str:
+        """Generate chart summary"""
+        chart_type = chart_config.get('type', 'unknown')
+        title = chart_config.get('title', 'Untitled')
+        
+        summary = [
+            f"### GPT-Vis Chart Generated: {title}",
+            f"**Filename**: {filename}",
+            f"- **Chart Type**: {chart_type.title()}",
+            f"- **Data Points**: {record_count:,}"
+        ]
+        
+        if 'axisXTitle' in chart_config:
+            summary.append(f"- **X-Axis Title**: {chart_config['axisXTitle']}")
+        if 'axisYTitle' in chart_config:
+            summary.append(f"- **Y-Axis Title**: {chart_config['axisYTitle']}")
+        if chart_config.get('group'):
+            summary.append(f"- **Grouping**: Enabled")
+        if chart_config.get('stack'):
+            summary.append(f"- **Stacking**: Enabled")
+
+        return "\n".join(summary)

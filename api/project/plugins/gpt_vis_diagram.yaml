@@ -1,0 +1,49 @@
+name: gpt_vis_diagram
+enabled: false
+required: false
+description: >-
+  Generate GPT-Vis compatible diagrams including flow diagrams and mind maps.
+  Supports 2 diagram types: flow-diagram, mind-map.
+  Data size limit: 50 nodes maximum for optimal performance.
+  **Input data format varies by diagram type - see examples below.**
+
+examples: >-
+  # Flow diagram - requires nodes and edges structure
+  nodes = [{"name": "start", "label": "Start"}, {"name": "process", "label": "Process"}, {"name": "end", "label": "End"}]
+  edges = [{"source": "start", "target": "process", "name": "edge1"}, {"source": "process", "target": "end", "name": "edge2"}]
+  markdown = gpt_vis_diagram(nodes=nodes, edges=edges, diagram_type="flow-diagram", title="Business Process Diagram")
+
+  # Mind map - requires hierarchical tree structure
+  mind_data = {"name": "Project Management", "children": [{"name": "Planning Phase", "children": [{"name": "Requirement Analysis"}, {"name": "Resource Planning"}]}, {"name": "Execution Phase", "children": [{"name": "Task Assignment"}, {"name": "Progress Tracking"}]}]}
+  markdown = gpt_vis_diagram(mind_data=mind_data, diagram_type="mind-map", title="Project Management Mind Map")
+
+parameters:
+  - name: diagram_type
+    type: str
+    required: true
+    description: Diagram type, must be one of ['flow-diagram', 'mind-map'].
+  
+  - name: nodes
+    type: List[Dict]
+    required: false
+    description: Node list for flow diagram. Each node should have 'name' and optionally 'label'. Required for flow-diagram type.
+  
+  - name: edges
+    type: List[Dict]
+    required: false
+    description: Edge list for flow diagram. Each edge should have 'source', 'target', and optionally 'name'. Required for flow-diagram type.
+  
+  - name: mind_data
+    type: Dict
+    required: false
+    description: Hierarchical data for mind map. Should have 'name' and 'children' structure. Required for mind-map type.
+  
+  - name: title
+    type: str
+    required: false
+    description: Diagram title.
+
+returns:
+  - name: markdown_content
+    type: str
+    description: The full Markdown content with a `vis-chart` code block, compatible with GPT-Vis.
