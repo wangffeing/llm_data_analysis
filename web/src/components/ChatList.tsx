@@ -753,20 +753,64 @@ const ChatList: React.FC<ChatListProps> = React.memo(({
             
             {(dataPreview || filePreview) && (
               <div className="data-preview-container">
-                <DataTable
-                  sourceName={(filePreview || dataPreview).source_name}
-                  columns={(filePreview || dataPreview).columns.map((col: any) => (typeof col === 'string' ? { title: col, dataIndex: col, key: col } : col))}
-                  data={(filePreview || dataPreview).data.map((row: any[], rowIndex: number) => {
-                    const rowData: { [key: string]: any } = { key: rowIndex };
-                    (filePreview || dataPreview).columns.forEach((col: any, colIndex: number) => {
-                      const dataIndex = typeof col === 'string' ? col : col.dataIndex;
-                      rowData[dataIndex] = row[colIndex];
-                    });
-                    return rowData;
-                  })}
-                  totalShown={(filePreview || dataPreview).total_shown}
-                  maxHeight={300}
-                />
+                {(() => {
+                  const preview = filePreview || dataPreview;
+                  const columns = preview?.columns || [];
+                  const columnsNames = preview?.columns_names || [];
+                  const data = preview?.data || [];
+                  
+                  // 确保有有效的列和数据才渲染
+                  if (columns.length === 0 || data.length === 0) {
+                    return (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#666' }}>
+                        暂无数据预览
+                      </div>
+                    );
+                  }
+                  
+                  // 处理数据格式：确保data是对象数组格式
+                  const processedData = data.map((row: any, rowIndex: number) => {
+                    if (Array.isArray(row)) {
+                      // 如果row是数组，转换为对象
+                      const rowData: { [key: string]: any } = { key: rowIndex };
+                      columns.forEach((col: any, colIndex: number) => {
+                        const dataIndex = typeof col === 'string' ? col : col.dataIndex;
+                        rowData[dataIndex] = row[colIndex];
+                      });
+                      return rowData;
+                    } else if (typeof row === 'object' && row !== null) {
+                      // 如果row已经是对象，直接使用（只添加key）
+                      return { ...row, key: row.key ?? rowIndex };
+                    } else {
+                      // 其他情况，创建空对象
+                      return { key: rowIndex };
+                    }
+                  });
+                  
+                  // 创建表格列配置，使用中文列名
+                  const tableColumns = columns.map((col: any, index: number) => {
+                    const dataIndex = typeof col === 'string' ? col : col.dataIndex;
+                    const title = columnsNames[index] || dataIndex; // 优先使用中文列名
+                    
+                    return {
+                      title,
+                      dataIndex,
+                      key: dataIndex,
+                      ellipsis: true,
+                      width: 150
+                    };
+                  });
+                  
+                  return (
+                    <DataTable
+                      sourceName={preview?.source_name || '未知数据源'}
+                      columns={tableColumns}
+                      data={processedData}
+                      totalShown={preview?.total_shown || preview?.total_rows || data.length}
+                      maxHeight={300}
+                    />
+                  );
+                })()}
               </div>
             )}
             

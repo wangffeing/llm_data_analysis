@@ -5,6 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
 
+# 确保在导入其他模块之前加载环境变量
+from dotenv import load_dotenv
+load_dotenv()
+
 # 导入依赖项和模块
 from dependencies import cleanup_dependencies, get_taskweaver_app, get_db_connection
 import dependencies as deps

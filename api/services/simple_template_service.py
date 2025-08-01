@@ -1,56 +1,48 @@
-import json
 import pandas as pd
 from typing import Dict, List, Any, Optional
-from pathlib import Path
+from services.template_database_service import TemplateDatabaseService
 
 class SimpleTemplateService:
-    def __init__(self):
-        self.templates_file = Path("templates/simple_templates.json")
-        self.templates = self._load_templates()
-    
-    def _load_templates(self) -> Dict[str, Any]:
-        """加载模板配置"""
-        try:
-            with open(self.templates_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {}
-    
+    def __init__(self, db_path: str = None):
+        """
+        初始化模板服务 - 完全使用数据库模式
+        修复：如果没有提供 db_path，则从配置文件读取
+        """
+        if db_path is None:
+            from config import get_config
+            config = get_config()
+            db_path = config.config_db_path
+            
+        self.template_db_service = TemplateDatabaseService(db_path)
+        
     def get_available_templates(self) -> List[Dict[str, Any]]:
-        """获取可用模板列表 - 返回完整的模板结构"""
+        """获取可用模板列表"""
+        templates_dict = self.template_db_service.get_all_templates()
         templates_list = []
-        for template_id, template_config in self.templates.items():
-            # 直接返回完整的模板结构，添加id字段
+        for template_id, template_config in templates_dict.items():
             template_with_id = {
                 "id": template_id,
-                "template_metadata": template_config.get("template_metadata", {}),
-                "data_schema": template_config.get("data_schema", {}),
-                "execution_plan": template_config.get("execution_plan", {}),
-                "output_specification": template_config.get("output_specification", {})
+                **template_config
             }
             templates_list.append(template_with_id)
         return templates_list
-    
+
     def get_template_by_id(self, template_id: str) -> Optional[Dict[str, Any]]:
-        """根据ID获取模板详情 - 直接返回原始JSON结构"""
-        template_config = self.templates.get(template_id)
+        """根据ID获取模板详情"""
+        templates_dict = self.template_db_service.get_all_templates()
+        template_config = templates_dict.get(template_id)
         if not template_config:
             return None
-            
-        # 直接返回原始JSON结构，添加id字段
-        result = {
+        return {
             "id": template_id,
-            "template_metadata": template_config.get("template_metadata", {}),
-            "data_schema": template_config.get("data_schema", {}),
-            "execution_plan": template_config.get("execution_plan", {}),
-            "output_specification": template_config.get("output_specification", {})
+            **template_config
         }
-        
-        return result
             
     def generate_analysis_prompt(self, template_id: str) -> str:
-        """生成分析提示词 - 适配新的模板格式"""
-        template = self.templates.get(template_id)
+        """生成分析提示词"""
+        templates_dict = self.template_db_service.get_all_templates()
+        template = templates_dict.get(template_id)
+            
         if not template:
             return "模板不存在"
         
@@ -60,7 +52,6 @@ class SimpleTemplateService:
         execution_plan = template.get("execution_plan", {})
         output_spec = template.get("output_specification", {})
         
-
         # 模板基本信息
         prompt = f"## 任务描述\n{metadata.get('summary', '')}\n\n"
         
@@ -104,7 +95,6 @@ class SimpleTemplateService:
         prompt += "3. 最终报告要使用指定的模板格式\n"
         prompt += "4. 如果遇到条件性步骤，请根据数据情况决定是否执行\n"
         
-
         return prompt
     
     def analyze_with_template(self, template_id: str) -> Dict[str, Any]:
@@ -124,10 +114,7 @@ class SimpleTemplateService:
     def add_custom_template(self, template_id: str, template_config: Dict[str, Any]) -> bool:
         """添加自定义模板"""
         try:
-            self.templates[template_id] = template_config
-            with open(self.templates_file, 'w', encoding='utf-8') as f:
-                json.dump(self.templates, f, ensure_ascii=False, indent=2)
-            return True
+            return self.template_db_service.add_template(template_id, template_config)
         except Exception as e:
             print(f"添加模板失败: {e}")
             return False
@@ -135,12 +122,7 @@ class SimpleTemplateService:
     def update_custom_template(self, template_id: str, template_config: Dict[str, Any]) -> bool:
         """更新自定义模板"""
         try:
-            if template_id in self.templates:
-                self.templates[template_id] = template_config
-                with open(self.templates_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.templates, f, ensure_ascii=False, indent=2)
-                return True
-            return False
+            return self.template_db_service.update_template(template_id, template_config)
         except Exception as e:
             print(f"更新模板失败: {e}")
             return False
@@ -148,12 +130,7 @@ class SimpleTemplateService:
     def delete_custom_template(self, template_id: str) -> bool:
         """删除自定义模板"""
         try:
-            if template_id in self.templates:
-                del self.templates[template_id]
-                with open(self.templates_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.templates, f, ensure_ascii=False, indent=2)
-                return True
-            return False
+            return self.template_db_service.delete_template(template_id, template_config)
         except Exception as e:
             print(f"删除模板失败: {e}")
             return False

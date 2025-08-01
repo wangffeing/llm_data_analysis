@@ -15,24 +15,12 @@ from services.sse_service import SSEService
 from event_handlers.sse_event_handler import SSEEventHandler, SSEMessageType
 from session_manager import SessionManager
 from models.chat_models import ChatMessage
-from config import DATA_SOURCES
+from services.data_source_service import DataSourceService  # 替换直接导入DATA_SOURCES
 from taskweaver.memory.attachment import AttachmentType
-from fastapi import HTTPException
-import tempfile
-import json
 from taskweaver.app.app import TaskWeaverApp
+from config import get_config
 
 logger = logging.getLogger(__name__)
-
-FILE_TYPE_MAP = {
-    ('png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg'): 'image',
-    ('mp3', 'wav', 'flac', 'aac'): 'audio',
-    ('csv',): 'csv',
-    ('xlsx', 'xls'): 'excel',
-    ('pdf',): 'pdf',
-    ('txt', 'log'): 'text',
-    ('py', 'js', 'html', 'css', 'json'): 'code'
-}
 
 class TaskWeaverError(Exception):
     """TaskWeaver相关错误"""
@@ -51,9 +39,12 @@ class ChatService:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.task_timeout = task_timeout
         self._active_tasks: Dict[str, asyncio.Task] = {}
-
-        logging.getLogger('taskweaver').setLevel(logging.WARNING)
+        # 修复：使用配置文件中的 CONFIG_DB_PATH
+        config = get_config()
+        self.data_source_service = DataSourceService(config.config_db_path)
         
+        logging.getLogger('taskweaver').setLevel(logging.WARNING)
+
     @asynccontextmanager
     async def _get_taskweaver_session_context(self, session_data: Dict, session_id: str):
         """获取TaskWeaver会话的上下文管理器，使用会话级别配置"""
@@ -245,13 +236,15 @@ class ChatService:
         prompt = message.content
     
         if message.selected_table:
-            if message.selected_table not in DATA_SOURCES:
+            # 使用数据源服务获取数据源信息
+            data_sources = self.data_source_service.get_all_data_sources()
+            if message.selected_table not in data_sources:
                 await self.sse_service.send_message(session_id, SSEMessageType.ERROR, {
                     "error": "选择的数据源不存在"
                 })
                 raise TaskWeaverError("选择的数据源不存在")
     
-            table_info = DATA_SOURCES[message.selected_table]
+            table_info = data_sources[message.selected_table]
             prompt = textwrap.dedent(f"""
             请使用sql_pull_data插件从数据库中获取数据并完成任务。
             
