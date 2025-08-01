@@ -62,8 +62,8 @@ async def get_data_sources(
                 "name": name,
                 "table_name": config["table_name"],
                 "description": config["table_des"],
-                "columns": config["table_columns"],
-                "columns_names": config["table_columns_names"],
+                "table_columns": config["table_columns"],
+                "table_columns_names": config["table_columns_names"],
                 "table_order": config["table_order"],
                 "database_type": config.get("database_type", "unknown")
             })
@@ -188,21 +188,23 @@ async def get_data_preview(
         
         source_config = data_sources[source_name]
         table_name = source_config["table_name"]
-        
+        table_columns = ','.join(source_config['table_columns'])
+
         # 导入数据库连接
         from db_connection import get_db_manager
         
         db_manager = get_db_manager()
         
         # 构建查询语句
-        query = f"SELECT * FROM {table_name} LIMIT {limit}"
+        query = f"SELECT {table_columns} FROM {table_name} LIMIT {limit}"
         
         # 执行查询
         df = db_manager.execute_query_to_dataframe(query)
-        
+        df.columns = source_config['table_columns']
+
         # 转换为字典格式
         preview_data = df.to_dict('records')
-        
+
         # 清理 NaN 值
         cleaned_data = clean_nan_values(preview_data)
         

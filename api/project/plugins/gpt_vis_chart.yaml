@@ -2,46 +2,22 @@ name: gpt_vis_chart
 enabled: true
 required: false
 description: >
-  Generate charts compatible with the GPT-Vis specification from a pandas DataFrame.
-  Supports line/area (time series with time, value), column/bar/pie (categorical with category, value).
-  Input data is limited to 100 records, summarize large datasets before using gpt_vis_chart.
-  Output is a Markdown code block renderable by GPT-Vis.
+  Generates GPT-Vis charts from a pandas DataFrame. Supports line/area (time series with time, value), column/bar/pie (categorical with category, value). Input data is limited to 100 records, Input df must be clean and summarized (no null values, max 100 records).
 
 examples: >
-  # Example 1: Create a simple line chart to show sales trends.
-  # Assume we have a DataFrame `sales_df` containing columns `date` and `sales`.
-  # df = pd.DataFrame({
-  #   "date": ["2025-01-01", "2025-01-02", "2025-01-03"],
-  #   "sales": [150, 180, 170]
-  # })
   markdown, summary = gpt_vis_chart(df=sales_df, chart_type="line", x_field="date", y_field="sales", title="Daily Sales Trend")
-
-  # Example 2: Create a stacked bar chart showing revenue by product line across regions.
-  # Assume we have a DataFrame `revenue_df` with columns `region`, `product_line`, and `revenue`.
-  # df = pd.DataFrame({
-  #   "region": ["North China", "North China", "East China", "East China"],
-  #   "product_line": ["A", "B", "A", "B"],
-  #   "revenue": [1000, 800, 1200, 900]
-  # })
   markdown, summary = gpt_vis_chart(df=revenue_df, chart_type="bar", x_field="region", y_field="revenue", series_field="product_line", stack=True, title="Revenue by Product Line per Region (Stacked)")
-
-  # Example 3: Create a pie chart to display market share.
-  # Assume we have a DataFrame `market_df` with `company` and `share` columns.
-  # df = pd.DataFrame({
-  #   "company": ["Company A", "Company B", "Company C"],
-  #   "share": [45, 35, 20]
-  # })
   markdown, summary = gpt_vis_chart(df=market_df, chart_type="pie", x_field="company", y_field="share", title="Market Share Distribution")
 
 parameters:
   - name: df
     type: DataFrame
     required: true
-    description: Input pandas DataFrame for visualization. To ensure performance, it should contain no more than 100 records.
+    description: Input pandas DataFrame for visualization (max 100 rows, must not contain any null values).
   - name: chart_type
     type: str
     required: true
-    description: Chart type. Must be one of ['line', 'column', 'bar', 'area', 'pie'].
+    description: Chart type. Must be one of 'line', 'column', 'bar', 'area', 'pie'.
   - name: x_field
     type: str
     required: false
@@ -72,7 +48,7 @@ parameters:
 returns:
   - name: markdown_content
     type: str
-    description: The full Markdown content with a `vis-chart` code block, compatible with GPT-Vis.
+    description: GPT-Vis compatible Markdown content with a `vis-chart` code block.
   - name: summary
     type: str
-    description: A textual summary of the generated chart in Markdown format.
+    description: Markdown summary of the generated chart.

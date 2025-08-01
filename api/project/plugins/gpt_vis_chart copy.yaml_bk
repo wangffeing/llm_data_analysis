@@ -1,82 +1,78 @@
 name: gpt_vis_chart
 enabled: true
 required: false
-description: >-
-  Generate GPT-Vis compatible charts with automatic data format processing based on chart type.
-  Supports 7 chart types: line, column, area, bar, scatter, dual-axes, pie.
-  Data size limit: 100 records maximum for optimal performance, summarize data before using this plugin
-  **Input data must be a Python list of dictionaries, not a Pandas DataFrame. Use `df.to_dict(orient="records")` before passing if needed.**
+description: >
+  Generate charts compatible with the GPT-Vis specification from a pandas DataFrame.
+  Supports line/area (time series with time, value), column/bar/pie (categorical with category, value).
+  Input data is limited to 100 records, summarize large datasets before using gpt_vis_chart.
+  Output is a Markdown code block renderable by GPT-Vis.
 
-examples: >-
-  # Line chart - auto convert to {time, value, group?} format
-  data = [{"date": "2023-01", "sales": 100}, {"date": "2023-02", "sales": 120}]
-  markdown, summary = gpt_vis_chart(data, chart_type="line", title="Sales Trend", axisXTitle="Month", axisYTitle="Sales Amount")
-    
-  # Column chart - auto convert to {category, value, group?} format
-  data = [{"product": "A", "revenue": 1000}, {"product": "B", "revenue": 1500}]
-  markdown, summary = gpt_vis_chart(data, chart_type="column", title="Product Revenue", axisXTitle="Product", axisYTitle="Revenue")
-  
-  # Area chart - auto convert to {time, value, group?} format
-  data = [{"month": "Jan", "visitors": 1000}, {"month": "Feb", "visitors": 1200}]
-  markdown, summary = gpt_vis_chart(data, chart_type="area", title="Website Visitors", axisXTitle="Month", axisYTitle="Visitors")
-  
-  # Bar chart - auto convert to {category, value, group?} format
-  data = [{"department": "Sales", "employees": 25}, {"department": "Marketing", "employees": 15}]
-  markdown, summary = gpt_vis_chart(data, chart_type="bar", title="Employees by Department", axisXTitle="Number of Employees", axisYTitle="Department")
-  
-  # Scatter chart - auto convert to {x, y} format
-  data = [{"height": 170, "weight": 65}, {"height": 180, "weight": 75}]
-  markdown, summary = gpt_vis_chart(data, chart_type="scatter", title="Height vs Weight", axisXTitle="Height (cm)", axisYTitle="Weight (kg)")
-    
-  # Dual-axes chart - special format with categories and series
-  data = [{"month": "Jan", "sales": 1000, "profit": 200}, {"month": "Feb", "sales": 1200, "profit": 250}]
-  markdown, summary = gpt_vis_chart(data, chart_type="dual-axes", title="Sales vs Profit", axisXTitle="Month")
-  
-  # Pie chart - auto convert to {category, value} format
-  data = [{"region": "North", "sales": 1000}, {"region": "South", "sales": 800}, {"region": "East", "sales": 600}]
-  markdown, summary = gpt_vis_chart(data, chart_type="pie", title="Sales by Region")
+examples: >
+  # Example 1: Create a simple line chart to show sales trends.
+  # Assume we have a DataFrame `sales_df` containing columns `date` and `sales`.
+  # df = pd.DataFrame({
+  #   "date": ["2025-01-01", "2025-01-02", "2025-01-03"],
+  #   "sales": [150, 180, 170]
+  # })
+  markdown, summary = gpt_vis_chart(df=sales_df, chart_type="line", x_field="date", y_field="sales", title="Daily Sales Trend")
+
+  # Example 2: Create a stacked bar chart showing revenue by product line across regions.
+  # Assume we have a DataFrame `revenue_df` with columns `region`, `product_line`, and `revenue`.
+  # df = pd.DataFrame({
+  #   "region": ["North China", "North China", "East China", "East China"],
+  #   "product_line": ["A", "B", "A", "B"],
+  #   "revenue": [1000, 800, 1200, 900]
+  # })
+  markdown, summary = gpt_vis_chart(df=revenue_df, chart_type="bar", x_field="region", y_field="revenue", series_field="product_line", stack=True, title="Revenue by Product Line per Region (Stacked)")
+
+  # Example 3: Create a pie chart to display market share.
+  # Assume we have a DataFrame `market_df` with `company` and `share` columns.
+  # df = pd.DataFrame({
+  #   "company": ["Company A", "Company B", "Company C"],
+  #   "share": [45, 35, 20]
+  # })
+  markdown, summary = gpt_vis_chart(df=market_df, chart_type="pie", x_field="company", y_field="share", title="Market Share Distribution")
 
 parameters:
-  - name: data
-    type: List[Dict]
+  - name: df
+    type: DataFrame
     required: true
-    description: Raw data list where each element is a dictionary. Plugin will automatically convert to GPT-Vis required format based on chart_type.Maximum 100 records allowed. **Do NOT pass a Pandas DataFrame, convert using `df.to_dict(orient='records')` first.**
-
+    description: Input pandas DataFrame for visualization. To ensure performance, it should contain no more than 100 records.
   - name: chart_type
     type: str
     required: true
-    description: Chart type, must be one of ['line', 'column', 'area', 'bar', 'scatter', 'dual-axes', 'pie'].
-  
+    description: Chart type. Must be one of ['line', 'column', 'bar', 'area', 'pie'].
+  - name: x_field
+    type: str
+    required: false
+    description: Column name in the DataFrame used as the X-axis or categorical dimension. For pie charts, this represents the category field.
+  - name: y_field
+    type: str
+    required: false
+    description: Column name in the DataFrame used as the Y-axis (numerical values). For pie charts, this represents the value field.
   - name: title
     type: str
     required: false
-    description: Chart title.
-  
-  - name: group
-    type: bool
+    description: Title of the chart.
+  - name: series_field
+    type: str
     required: false
-    description: Enable grouping (applicable for bar/column charts).
-  
+    description: Column name used for grouping data, displayed as separate colors or series in the chart.
   - name: stack
     type: bool
     required: false
-    description: Enable stacking (applicable for area/bar/column charts).
-
-  - name: axisXTitle
-    type: str
+    default: false
+    description: Set to true to enable stacked chart display. Applies to `area`, `bar`, `column` charts and requires `series_field`.
+  - name: group
+    type: bool
     required: false
-    description: X-axis title.
-  
-  - name: axisYTitle
-    type: str
-    required: false
-    description: Y-axis title.
+    default: false
+    description: Set to true to enable grouped chart display. Applies to `bar`, `column` charts and requires `series_field`.
 
 returns:
   - name: markdown_content
     type: str
-    description: GPT-Vis compatible markdown content with vis-chart code block.
-  
+    description: The full Markdown content with a `vis-chart` code block, compatible with GPT-Vis.
   - name: summary
     type: str
-    description: Chart generation summary.
+    description: A textual summary of the generated chart in Markdown format.

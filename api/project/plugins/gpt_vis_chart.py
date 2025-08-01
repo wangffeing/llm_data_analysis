@@ -99,7 +99,7 @@ class gpt_vis_chart(Plugin):
         for col in df.select_dtypes(include=['object']).columns:
             if df[col].dtype == 'object':
                 try:
-                    df[col] = pd.to_numeric(df[col], errors='ignore')
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
                 except:
                     pass
         

@@ -55,15 +55,15 @@ class ConfigDatabaseService:
             
             sources = {}
             for row in cursor.fetchall():
-                columns = row['columns'].split(',') if row['columns'] else []
-                column_names = row['column_names'].split(',') if row['column_names'] else []
+                table_columns = row['columns'].split(',') if row['columns'] else []
+                table_columns_names = row['column_names'].split(',') if row['column_names'] else []
                 
                 sources[row['source_key']] = {
                     'table_name': row['table_name'],
                     'table_des': row['table_des'],
                     'table_order': row['table_order'],
-                    'table_columns': columns,
-                    'table_columns_names': column_names,
+                    'table_columns': table_columns,
+                    'table_columns_names': table_columns_names,
                     'database_type': self._safe_get(row, 'database_type', 'unknown')  # 修复兼容性问题
                 }
             
@@ -75,8 +75,8 @@ class ConfigDatabaseService:
         return sources.get(source_key)
     
     def add_data_source(self, source_key: str, table_name: str, table_des: str = "", 
-                       table_order: str = "", columns: List[str] = None, 
-                       column_names: List[str] = None, database_type: str = "unknown") -> bool:
+                       table_order: str = "", table_columns: List[str] = None, 
+                       table_columns_names: List[str] = None, database_type: str = "unknown") -> bool:
         """添加新的数据源配置"""
         try:
             with self.get_connection() as conn:
@@ -92,9 +92,9 @@ class ConfigDatabaseService:
                 source_id = cursor.lastrowid
                 
                 # 插入列配置
-                if columns:
-                    for i, column_name in enumerate(columns):
-                        display_name = column_names[i] if column_names and i < len(column_names) else column_name
+                if table_columns:
+                    for i, column_name in enumerate(table_columns):
+                        display_name = table_columns_names[i] if table_columns_names and i < len(table_columns_names) else column_name
                         cursor.execute('''
                             INSERT INTO data_source_columns 
                             (source_id, column_name, column_display_name, column_order)
@@ -142,14 +142,14 @@ class ConfigDatabaseService:
                     ''', update_values)
                 
                 # 更新列配置
-                if 'columns' in kwargs:
+                if 'table_columns' in kwargs:
                     cursor.execute('DELETE FROM data_source_columns WHERE source_id = ?', (source_id,))
                     
-                    columns = kwargs['columns']
-                    column_names = kwargs.get('column_names', [])
+                    table_columns = kwargs['table_columns']
+                    table_columns_names = kwargs.get('table_columns_names', [])
                     
-                    for i, column_name in enumerate(columns):
-                        display_name = column_names[i] if i < len(column_names) else column_name
+                    for i, column_name in enumerate(table_columns):
+                        display_name = table_columns_names[i] if i < len(table_columns_names) else column_name
                         cursor.execute('''
                             INSERT INTO data_source_columns 
                             (source_id, column_name, column_display_name, column_order)

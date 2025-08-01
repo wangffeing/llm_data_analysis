@@ -65,8 +65,8 @@ class DataSourceService:
                 table_name=config.get('table_name', ''),
                 table_des=config.get('table_des', ''),
                 table_order=config.get('table_order', ''),
-                columns=config.get('table_columns', []),
-                column_names=config.get('table_columns_names', []),
+                table_columns=config.get('table_columns', []),
+                table_columns_names=config.get('table_columns_names', []),
                 database_type=config.get('database_type', current_db_type)  # 使用当前数据库类型作为默认值
             )
         except Exception as e:
@@ -81,8 +81,8 @@ class DataSourceService:
                 table_name=config.get('table_name'),
                 table_des=config.get('table_des'),
                 table_order=config.get('table_order'),
-                columns=config.get('table_columns'),
-                column_names=config.get('table_columns_names'),
+                table_columns=config.get('table_columns'),
+                table_columns_names=config.get('table_columns_names'),
                 database_type=config.get('database_type')  # 支持更新数据库类型
             )
         except Exception as e:

@@ -246,26 +246,28 @@ class ChatService:
     
             table_info = data_sources[message.selected_table]
             prompt = textwrap.dedent(f"""
-            请使用sql_pull_data插件从数据库中获取数据并完成任务。
+            请根据任务使用sql_pull_data插件从数据库中相应数据，并完成用户任务。
             
-            **数据源信息：**
-            表名: {table_info['table_name']}
-            表描述: {table_info['table_des']}
-            字段信息: {table_info['table_columns']}
-            字段描述: {table_info['table_columns_names']}\n""").strip()
+            ## 任务表信息：
+            - 表名: {table_info['table_name']}
+            - 表描述: {table_info['table_des']}
+            - 字段信息: {table_info['table_columns']}
+            - 字段描述: {table_info['table_columns_names']}\n""").strip()
 
             if message.content.find('## 任务描述') >= 0 and message.content.find('## 分析目标') >=0:
                 prompt += message.content
             else:
                 prompt += textwrap.dedent(f"""
-                {prompt}
-                **数据分析要求：**
-                1. **数据理解**请先从数据库|文件中获取相关数据，理解数据结构和业务含义
-                2. **业务洞察**提供具有客服运营指导意义的专业分析结果
-                3. **实用建议**：给出具体的客服服务优化或运营改进建议
-                **分析任务：** {message.content}
-                请使用专业的客服和移动通信术语，确保分析结果对客服管理和移动通信行业具有实际意义。
+                ## 任务： {message.content}
                 """).strip()
+                # prompt += textwrap.dedent(f"""
+                # ## 数据分析要求：
+                # 1. **数据理解**请先从数据库|文件中获取相关数据，理解数据结构和业务含义
+                # 2. **业务洞察**提供具有客服运营指导意义的专业分析结果
+                # 3. **实用建议**：给出具体的客服服务优化或运营改进建议
+                # ## 任务： {message.content}
+                # 请使用专业的客服和移动通信术语，确保分析结果对客服管理和移动通信行业具有实际意义。
+                # """).strip()
 
         # 在 _build_prompt 方法中添加实际的文件内容读取
         elif hasattr(message, 'uploaded_files') and message.uploaded_files:
