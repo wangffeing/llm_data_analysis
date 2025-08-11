@@ -15,6 +15,7 @@ import { HOT_TOPICS, DESIGN_GUIDE, SENDER_PROMPTS } from './constants/appConstan
 import { handleError, withErrorHandling } from './utils/errorUtils';
 import ConnectionStatus from './components/ConnectionStatus';
 import GPTVisTestPage from './components/GPTVisTestPage';
+import { apiService } from './services/apiService';
 
 function AppContent() {
   const { message } = AntdApp.useApp();
@@ -94,11 +95,50 @@ function AppContent() {
     setTemplateSelectorVisible(true);
   }, [selectedDataSource, attachedFiles, message]);
 
-  // 新增：生成智能报告
-  const handleGenerateReport = useCallback((analysisResults: any) => {
-    setCurrentAnalysisResults(analysisResults);
-    setReportViewerVisible(true);
-  }, []);
+  // 改进：生成智能报告
+  // 修改handleGenerateReport函数，改为基于session_id生成报告
+  // 修改handleGenerateReport函数，修复TypeScript错误
+  const handleGenerateReport = useCallback(async (reportData: any) => {
+    console.log('收到报告生成请求:', reportData);
+    
+    try {
+      // 显示加载状态
+      message.loading('正在生成智能报告...', 0);
+      
+      // 使用apiService调用后端API
+      const result = await apiService.generateIntelligentReport({
+        session_id: currentSession || 'default_session',
+        template_id: 'comprehensive',
+        config: {
+          include_executive_summary: true,
+          include_detailed_analysis: true,
+          include_recommendations: true,
+          include_appendix: true,
+          language: 'zh-CN'
+        }
+      });
+      
+      message.destroy(); // 清除loading消息
+      
+      if (result.success) {
+        // 设置报告数据并显示报告查看器
+        setCurrentAnalysisResults(result);
+        setSelectedTemplateId('comprehensive');
+        setReportViewerVisible(true);
+        
+        message.success('智能报告生成成功！');
+      } else {
+        throw new Error('报告生成失败');
+      }
+      
+    } catch (error) {
+      message.destroy();
+      console.error('报告生成失败:', error);
+      // 修复error类型问题
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      message.error(`报告生成失败: ${errorMessage}`);
+    }
+  }, [message, currentSession]);
 
   const getDataColumns = useCallback(() => {
     // 如果有选中的数据源，使用原始字段名
@@ -121,7 +161,11 @@ function AppContent() {
   const onSubmit = useCallback(withErrorHandling(async (val: string) => {
     if (!val) return;
   
-    if (!selectedDataSource && (!attachedFiles || attachedFiles.length === 0)) {
+    // 检查会话中是否已经有过文件上传的历史
+    const hasUploadedFiles = messages.some(msg => msg.files && msg.files.length > 0);
+    
+    // 修改验证逻辑：如果会话中已有文件上传历史，则不强制要求数据源
+    if (!hasUploadedFiles && !selectedDataSource && (!attachedFiles || attachedFiles.length === 0)) {
       message.error('请先选择数据源或上传文件');
       return;
     }
@@ -143,7 +187,7 @@ function AppContent() {
     setAttachedFiles([]);
     setAttachmentsOpen(false);
     setSelectedTemplateId(undefined); 
-  }, 'sendMessage', message), [selectedDataSource, attachedFiles, isConnected, sendMessage, setAttachedFiles, setAttachmentsOpen, checkSessionValidity, message]);
+  }, 'sendMessage', message), [messages, selectedDataSource, attachedFiles, isConnected, sendMessage, setAttachedFiles, setAttachmentsOpen, checkSessionValidity, message]);
 
   // 错误处理函数，传递messageApi
   const handleAppError = useCallback((error: Error, errorInfo: React.ErrorInfo) => {
@@ -171,9 +215,6 @@ function AppContent() {
       </div>
     );
   }
-
-
-
 
   return (
     <ErrorBoundary onError={handleAppError}>
@@ -206,8 +247,8 @@ function AppContent() {
             currentSession={currentSession}
             onDataSourcesChange={refreshDataSources}
             onOpenTemplateSelector={handleOpenTemplateSelector}
-            // 新增：GPT-Vis 测试页面
             onOpenGPTVisTest={handleOpenGPTVisTest}
+            messages={messages} // 新增：传递messages用于显示文件信息和分析指南
           />
         </ErrorBoundary>
         
@@ -261,6 +302,8 @@ function AppContent() {
               setFilePreview={setFilePreview}
               // 新增：模板选择功能
               onOpenTemplateSelector={handleOpenTemplateSelector}
+              // 新增：传递messages用于判断会话状态
+              messages={messages}
             />
           </ErrorBoundary>
         </div>

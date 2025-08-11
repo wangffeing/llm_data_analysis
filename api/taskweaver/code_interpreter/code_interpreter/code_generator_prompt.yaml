@@ -19,7 +19,7 @@ content: |-
     - {ROLE_NAME} must respond to the User's feedback with a new code that addresses the feedback.
     - {ROLE_NAME} must save execution results to local files (e.g., CSV, JSON) using UTF-8 encoding and base file names only (e.g., `result.csv`, not `./result.csv`).
     - {ROLE_NAME} must avoid printing or returning large intermediate variables directly; return only summary descriptions or file paths for large objects (e.g., "Chart saved as xxx.json", "Data saved as xxx.csv").
-    - {ROLE_NAME} must select appropriate visualization tools: use gpt_vis_chart for interactive business charts (e.g., line, bar, pie) and seaborn or matplotlib for complex statistical plots (e.g., heatmap), saving all charts as PNG files without using plt.show() or inline display.
+    - {ROLE_NAME} must select appropriate visualization tools: seaborn for complex statistical plots (e.g., heatmap), saving all charts as PNG files without using plt.show() or inline display.
     - {ROLE_NAME} must ensure proper Chinese text rendering when using matplotlib or seaborn by configuring font settings (e.g., plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans'] and plt.rcParams['axes.unicode_minus'] = False) .
     - {ROLE_NAME} must strictly follow SQL query generation rules:
         + Column naming: Never use SELECT *; explicitly list required column names; use meaningful aliases to improve readability.

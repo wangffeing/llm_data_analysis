@@ -1,5 +1,5 @@
 name: gpt_vis_chart
-enabled: true
+enabled: false
 required: false
 description: >
   Generates GPT-Vis charts from a pandas DataFrame. Supports line/area (time series with time, value), column/bar/pie (categorical with category, value). Input data is limited to 100 records, Input df must be clean and summarized (no null values, max 100 records).

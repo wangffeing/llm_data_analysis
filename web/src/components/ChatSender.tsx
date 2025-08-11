@@ -26,7 +26,8 @@ interface ChatSenderProps {
   isLoading?: boolean;
   connectionStatus?: string;
   setFilePreview?: (preview: any) => void;
-  onOpenTemplateSelector?: () => void;  // 新增
+  onOpenTemplateSelector?: () => void;
+  messages?: any[]; // 新增
 }
 
 const ChatSender: React.FC<ChatSenderProps> = ({
@@ -45,8 +46,12 @@ const ChatSender: React.FC<ChatSenderProps> = ({
   isLoading = false,
   connectionStatus = 'connected',
   onOpenTemplateSelector,
+  messages = [], // 新增
 }) => {
-  const { message } = App.useApp(); // 使用Hook方式获取message
+  const { message } = App.useApp();
+  
+  // 检查会话中是否已经有过文件上传的历史
+  const hasUploadedFiles = messages.some(msg => msg.files && msg.files.length > 0);
   
   const handleFilePreview = async (file: File) => {
     if (!setFilePreview) return;
@@ -253,8 +258,10 @@ const ChatSender: React.FC<ChatSenderProps> = ({
           ? `向AI提问关于 ${selectedDataSource.name} 的数据分析问题...`
           : attachedFiles.length > 0
           ? "请描述您想要对上传文件进行的分析..."
+          : hasUploadedFiles
+          ? "继续对话..."
           : "请先选择数据源或上传文件..."}
-        disabled={isLoading || (!selectedDataSource && attachedFiles.length === 0)}
+        disabled={isLoading || (!selectedDataSource && attachedFiles.length === 0 && !hasUploadedFiles)}
       />
     </>
   );

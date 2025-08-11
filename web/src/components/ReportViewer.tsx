@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Spin, Tabs, Space, Tag, Progress, Divider } from 'antd';
-import { DownloadOutlined, PrinterOutlined, ShareAltOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Modal, Button, Spin, message, Tabs, Card, Typography, Space, Divider } from 'antd';
+import { DownloadOutlined, PrinterOutlined, ReloadOutlined, CloseOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { apiService } from '../services/apiService';
+
+const { Title, Text } = Typography;
+const { TabPane } = Tabs;
+
+interface ReportViewerProps {
+  visible: boolean;
+  onClose: () => void;
+  analysisResults: any;
+  templateId?: string;
+}
 
 interface ReportData {
   success: boolean;
@@ -14,34 +24,35 @@ interface ReportData {
   };
 }
 
-interface ReportViewerProps {
-  analysisResults: any;
-  templateId?: string;
-  visible: boolean;
-  onClose: () => void;
-}
-
 const ReportViewer: React.FC<ReportViewerProps> = ({
-  analysisResults,
-  templateId,
   visible,
-  onClose
+  onClose,
+  analysisResults,
+  templateId = 'telecom_analysis'
 }) => {
-  const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('report');
-
-  useEffect(() => {
-    if (visible && analysisResults) {
-      generateReport();
-    }
-  }, [visible, analysisResults]);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const generateReport = async () => {
+    if (!analysisResults) {
+      message.error('分析结果数据不可用');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    
     try {
-      setLoading(true);
-      const response = await apiService.generateIntelligentReport({
-        analysis_results: analysisResults,
+      // 从 analysisResults 中提取 session_id
+      const sessionId = analysisResults.metadata?.session_id || 
+                       analysisResults.session_id || 
+                       localStorage.getItem('currentSessionId') || 
+                       'default-session';
+
+      // 构建请求数据，符合 ReportGenerationRequest 接口
+      const requestData = {
+        session_id: sessionId,  // 必需的 session_id
         template_id: templateId,
         config: {
           include_executive_summary: true,
@@ -49,138 +60,203 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           include_recommendations: true,
           language: 'zh-CN'
         }
-      });
-      setReportData(response);
-    } catch (error) {
+      };
+
+      console.log('发送报告生成请求:', requestData);
+      
+      const response = await apiService.generateIntelligentReport(requestData);
+      
+      if (response.success) {
+        setReportData(response);
+        message.success('报告生成成功！');
+      } else {
+        throw new Error('报告生成失败');
+      }
+    } catch (error: any) {
       console.error('生成报告失败:', error);
+      const errorMessage = error.response?.data?.detail || error.message || '生成报告时发生未知错误';
+      setError(errorMessage);
+      message.error(`生成报告失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const downloadReport = () => {
-    if (!reportData) return;
+  const handleRetry = () => {
+    generateReport();
+  };
+
+  const handleDownload = () => {
+    if (!reportData?.report) return;
     
     const blob = new Blob([reportData.report], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `分析报告_${new Date().toISOString().split('T')[0]}.md`;
+    a.download = `智能分析报告_${new Date().toISOString().slice(0, 10)}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    message.success('报告下载成功！');
   };
 
-  const printReport = () => {
-    window.print();
+  const handlePrint = () => {
+    if (!reportData?.report) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>智能分析报告</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              h1, h2, h3 { color: #1890ff; }
+              table { border-collapse: collapse; width: 100%; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+            </style>
+          </head>
+          <body>
+            ${reportData.report.replace(/\n/g, '<br>')}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }
   };
 
-  if (!visible) return null;
+  useEffect(() => {
+    if (visible && analysisResults) {
+      generateReport();
+    }
+  }, [visible, analysisResults, templateId]);
 
   return (
-    <div style={{ 
-      position: 'fixed', 
-      top: 0, 
-      left: 0, 
-      right: 0, 
-      bottom: 0, 
-      backgroundColor: 'rgba(0,0,0,0.5)', 
-      zIndex: 1000,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <Card
-        style={{ 
-          width: '90vw', 
-          height: '90vh', 
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>
-              <FileTextOutlined style={{ marginRight: 8 }} />
-              智能分析报告
-            </span>
-            <Space>
-              <Button icon={<DownloadOutlined />} onClick={downloadReport}>
+    <Modal
+      title={
+        <Space>
+          <Title level={4} style={{ margin: 0 }}>智能分析报告</Title>
+          {reportData?.metadata && (
+            <Text type="secondary">
+              {reportData.metadata.analysis_type} | {new Date(reportData.metadata.generated_at).toLocaleString()}
+            </Text>
+          )}
+        </Space>
+      }
+      open={visible}
+      onCancel={onClose}
+      width="90%"
+      style={{ top: 20 }}
+      footer={
+        <Space>
+          {error && (
+            <Button 
+              icon={<ReloadOutlined />} 
+              onClick={handleRetry}
+              type="primary"
+            >
+              重新生成
+            </Button>
+          )}
+          {reportData && (
+            <>
+              <Button 
+                icon={<DownloadOutlined />} 
+                onClick={handleDownload}
+              >
                 下载报告
               </Button>
-              <Button icon={<PrinterOutlined />} onClick={printReport}>
+              <Button 
+                icon={<PrinterOutlined />} 
+                onClick={handlePrint}
+              >
                 打印报告
               </Button>
-              <Button onClick={onClose}>
-                关闭
+            </>
+          )}
+          <Button 
+            icon={<CloseOutlined />} 
+            onClick={onClose}
+          >
+            关闭
+          </Button>
+        </Space>
+      }
+    >
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '50px 0' }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 16 }}>
+            <Text>正在生成智能分析报告，请稍候...</Text>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <Card>
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <Text type="danger">❌ {error}</Text>
+            <div style={{ marginTop: 16 }}>
+              <Button 
+                type="primary" 
+                icon={<ReloadOutlined />} 
+                onClick={handleRetry}
+              >
+                重新生成报告
               </Button>
-            </Space>
+            </div>
           </div>
-        }
-      >
-        {loading ? (
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            height: '400px',
-            flexDirection: 'column'
-          }}>
-            <Spin size="large" />
-            <div style={{ marginTop: 16 }}>正在生成智能报告...</div>
-            <Progress percent={75} style={{ width: 300, marginTop: 16 }} />
-          </div>
-        ) : reportData ? (
-          <Tabs 
-            activeKey={activeTab} 
-            onChange={setActiveTab}
-            style={{ flex: 1, overflow: 'hidden' }}
-            items={[
-              {
-                key: 'report',
-                label: '完整报告',
-                children: (
-                  <div style={{ 
-                    height: 'calc(90vh - 200px)', 
-                    overflow: 'auto',
-                    padding: '20px',
-                    backgroundColor: '#fafafa'
-                  }}>
-                    <ReactMarkdown>{reportData.report}</ReactMarkdown>
-                  </div>
-                )
-              },
-              {
-                key: 'metadata',
-                label: '报告信息',
-                children: (
-                  <div style={{ padding: '20px' }}>
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                      <Card size="small" title="基本信息">
-                        <p><strong>生成时间:</strong> {reportData.metadata.generated_at}</p>
-                        <p><strong>分析类型:</strong> {reportData.metadata.analysis_type}</p>
-                        <p><strong>数据范围:</strong> {reportData.metadata.data_range}</p>
-                      </Card>
-                      
-                      <Card size="small" title="报告统计">
-                        <p><strong>字符数:</strong> {reportData.report.length.toLocaleString()}</p>
-                        <p><strong>段落数:</strong> {reportData.report.split('\n\n').length}</p>
-                        <p><strong>图表数:</strong> {(reportData.report.match(/!\[.*?\]/g) || []).length}</p>
-                      </Card>
-                    </Space>
-                  </div>
-                )
-              }
-            ]}
-          />
-        ) : (
-          <div style={{ textAlign: 'center', padding: '50px' }}>
-            <p>暂无报告数据</p>
-          </div>
-        )}
-      </Card>
-    </div>
+        </Card>
+      )}
+
+      {reportData && !loading && (
+        <Tabs defaultActiveKey="report">
+          <TabPane tab="报告内容" key="report">
+            <Card>
+              <div style={{ 
+                maxHeight: '70vh', 
+                overflow: 'auto',
+                padding: '16px',
+                backgroundColor: '#fafafa',
+                border: '1px solid #d9d9d9',
+                borderRadius: '6px'
+              }}>
+                <ReactMarkdown>{reportData.report}</ReactMarkdown>
+              </div>
+            </Card>
+          </TabPane>
+          
+          <TabPane tab="报告信息" key="metadata">
+            <Card title="报告元数据">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <Text strong>生成时间：</Text>
+                  <Text>{new Date(reportData.metadata.generated_at).toLocaleString()}</Text>
+                </div>
+                <Divider />
+                <div>
+                  <Text strong>分析类型：</Text>
+                  <Text>{reportData.metadata.analysis_type}</Text>
+                </div>
+                <Divider />
+                <div>
+                  <Text strong>数据范围：</Text>
+                  <Text>{reportData.metadata.data_range}</Text>
+                </div>
+                <Divider />
+                <div>
+                  <Text strong>模板ID：</Text>
+                  <Text>{templateId}</Text>
+                </div>
+              </Space>
+            </Card>
+          </TabPane>
+        </Tabs>
+      )}
+    </Modal>
   );
 };
 

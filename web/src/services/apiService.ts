@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DataSource, TaskWeaverConfig, ConfigOptions, ConfigUpdateRequest } from '../types/appTypes';
+import type { DataSource, TaskWeaverConfig } from '../types/appTypes';
 import { Template } from '../types/template';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -15,6 +15,16 @@ const apiClient = axios.create({
 // 请求拦截器
 apiClient.interceptors.request.use(
   (config) => {
+    // 获取管理员密钥
+    const adminKey = localStorage.getItem('adminKey') || process.env.REACT_APP_ADMIN_KEY;
+    
+    // 判断是否是需要权限的请求
+    const needsAuth = isAdminRequest(config.url || '', config.method || '');
+    
+    if (needsAuth && adminKey) {
+      config.headers['X-Admin-Key'] = adminKey;
+    }
+    
     return config;
   },
   (error) => {
@@ -23,7 +33,7 @@ apiClient.interceptors.request.use(
   }
 );
 
-// 响应拦截器
+// 响应拦截器 - 添加权限错误处理
 apiClient.interceptors.response.use(
   (response) => {
     return response.data;
@@ -31,7 +41,11 @@ apiClient.interceptors.response.use(
   (error) => {
     console.error('响应错误:', error.response?.status, error.response?.data);
     
-    if (error.response?.status === 404) {
+    if (error.response?.status === 401) {
+      throw new Error('需要管理员权限，请设置正确的管理员密钥');
+    } else if (error.response?.status === 403) {
+      throw new Error('管理员密钥无效，请检查密钥是否正确');
+    } else if (error.response?.status === 404) {
       throw new Error('请求的资源不存在 (404)');
     } else if (error.response?.status === 500) {
       throw new Error('服务器内部错误 (500)');
@@ -42,6 +56,18 @@ apiClient.interceptors.response.use(
     }
   }
 );
+
+// 判断是否是需要管理员权限的请求
+function isAdminRequest(url: string, method: string): boolean {
+  const adminOperations = [
+    { endpoint: '/api/data/sources', methods: ['POST', 'PUT', 'DELETE'] },
+    { endpoint: '/api/templates/custom', methods: ['POST', 'PUT', 'DELETE'] }
+  ];
+  
+  return adminOperations.some(op => 
+    url.includes(op.endpoint) && op.methods.includes(method.toUpperCase())
+  );
+}
 
 
 interface SessionResponse {
@@ -123,13 +149,15 @@ interface TemplateDetailResponse {
 
 
 interface ReportGenerationRequest {
-  analysis_results: any;
+  session_id: string;
   template_id?: string;
-  config: {
-    include_executive_summary: boolean;
-    include_detailed_analysis: boolean;
-    include_recommendations: boolean;
-    language: string;
+  config?: {
+    include_executive_summary?: boolean;
+    include_detailed_analysis?: boolean;
+    include_recommendations?: boolean;
+    include_appendix?: boolean;
+    language?: string;
+    [key: string]: any;
   };
 }
 

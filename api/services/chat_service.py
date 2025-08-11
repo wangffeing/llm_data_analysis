@@ -160,7 +160,6 @@ class ChatService:
     
                 event_handler = SSEEventHandler(session_id, self.sse_service)
     
-                # 执行TaskWeaver任务
                 response_round = await self._execute_taskweaver_task(
                     taskweaver_session, prompt, event_handler, task_id, files
                 )
@@ -169,8 +168,10 @@ class ChatService:
                     response_round, session_data
                 )
     
-                # 发送完成消息
-                data = {"response": final_response}
+                data = {
+                    "response": final_response,
+                    "session_id": session_id
+                }
                 if files:
                     data["files"] = files
                 await self.sse_service.send_message(session_id, SSEMessageType.CHAT_COMPLETED, data)
@@ -317,6 +318,7 @@ class ChatService:
     
         return prompt
 
+    # 在 _process_taskweaver_response 方法中
     async def _process_taskweaver_response(self, response_round, session_data) -> Tuple[str, List[Dict]]:
         """处理TaskWeaver响应"""
         final_response = ""
@@ -331,11 +333,11 @@ class ChatService:
             return ext in ALLOWED_EXTENSIONS
 
         async def process_and_add_file(file_path_or_name: str):
-            if file_path_or_name in seen_paths:
-                return
 
             # 统一处理路径和文件名
             file_name = os.path.basename(file_path_or_name)
+            if file_name in seen_paths:
+                return
             absolute_file_path = file_path_or_name if os.path.isabs(file_path_or_name) else os.path.normpath(os.path.join(session_cwd_path, file_name))
             session_cwd_abs = os.path.abspath(session_cwd_path)
 
@@ -353,7 +355,7 @@ class ChatService:
                     "content": file_content,
                     "mime_type": self._get_mime_type(file_name)  # 用文件名判断mime更通用
                 })
-                seen_paths.add(file_path_or_name)
+                seen_paths.add(file_name)
         try:
             artifact_paths = [
                 p for post in response_round.post_list
@@ -378,8 +380,9 @@ class ChatService:
                 for file_name in os.listdir(session_cwd_path):
                     if not is_allowed_file(file_name):
                         continue
-                    full_path = os.path.join(session_cwd_path, file_name)
-                    await process_and_add_file(file_name)
+                    for post in response_round.post_list:
+                        if post.message.find(file_name) >= 0:
+                            await process_and_add_file(file_name)
                     # if os.path.isfile(full_path) and file_name in final_response and file_name not in seen_paths:
                     #     await process_and_add_file(file_name)
 

@@ -76,25 +76,25 @@ export const useXChat = ({ sessionId, selectedDataSource, thoughtChainConfig, me
         break;
         
       case MessageType.POST_STATUS_UPDATE:
-        setThoughtSteps(prev => {
-          const updated = prev.map(step => {
-            if (step.id === sseMessage.data.post_id) {
-              const newStatus = sseMessage.data.status;
-              return {
-                ...step,
-                description: updateDescription(
-                  step.description,
-                  newStatus || '',
-                  '**状态：** '
-                ),
-                status: 'process' as const
-              } as ThoughtStep;
-            }
-            return step;
-          });
-          thoughtStepsRef.current = updated;
-          return updated;
-        });
+        // setThoughtSteps(prev => {
+        //   const updated = prev.map(step => {
+        //     if (step.id === sseMessage.data.post_id) {
+        //       const newStatus = sseMessage.data.status;
+        //       return {
+        //         ...step,
+        //         description: updateDescription(
+        //           step.description,
+        //           newStatus || '',
+        //           '**状态：** '
+        //         ),
+        //         status: 'process' as const
+        //       } as ThoughtStep;
+        //     }
+        //     return step;
+        //   });
+        //   thoughtStepsRef.current = updated;
+        //   return updated;
+        // });
         break;
         
       case MessageType.POST_ATTACHMENT_UPDATE:
@@ -320,10 +320,11 @@ export const useXChat = ({ sessionId, selectedDataSource, thoughtChainConfig, me
       return;
     }
   
-    if (!selectedDataSource && (!attachedFiles || attachedFiles.length === 0)) {
-      messageApi?.error('请先选择数据源或上传文件');
-      return;
-    }
+    // 移除这部分验证，让App.tsx统一处理
+    // if (!hasUploadedFiles && !selectedDataSource && (!attachedFiles || attachedFiles.length === 0)) {
+    //   messageApi?.error('请先选择数据源或上传文件');
+    //   return;
+    // }
   
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -392,7 +393,7 @@ export const useXChat = ({ sessionId, selectedDataSource, thoughtChainConfig, me
       ));
       messageApi?.error('发送消息失败，请检查网络连接或重新创建会话');
     }
-  }, [sessionId, selectedDataSource, isConnected, messageApi]);
+  }, [sessionId, selectedDataSource, isConnected, messageApi]); 
 
   const updateDescription = useCallback((currentDescription: string | undefined, newContent: string, prefix: string): string => {
     const fullNewContent = `${prefix}${newContent}`;

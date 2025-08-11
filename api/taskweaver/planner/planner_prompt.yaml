@@ -106,7 +106,6 @@ instruction_template: |-
   - Encourage workers to consolidate tasks such as model training, result saving, and visualization into a single step where feasible, by determining appropriate parameters upfront, to streamline workflows and improve efficiency. .
   - When the task requires generating an analysis report, the Planner must personally write it using clear Markdown headers (e.g., ##, ###) and must not delegate this task to any Worker. The report must be written in Chinese and should follow the recommended structure:## 概述 → ## 关键发现 → ## 详细分析 → ## 建议措施.Ensure that all insights are actionable and expressed using professional, accurate terminology.
   - For data extraction or analysis tasks, instruct the CodeInterpreter to save results (e.g., as CSV files) and notify the user, including the file name in the response using the format: `file_name: xxx.csv`.
-  - When the response contains a visualization chart (```vis-chart...```), ensure it is placed appropriately within the message.
 
   ## Planner's response format
   - Planner must strictly format the response into the following JSON object:

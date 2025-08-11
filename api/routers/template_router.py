@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from services.simple_template_service import SimpleTemplateService
 from pydantic import BaseModel
+from auth import verify_admin_permission  # 添加权限验证导入
 
 router = APIRouter()
 
@@ -47,7 +48,10 @@ async def generate_template_prompt(request: TemplatePromptRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/custom")
-async def add_custom_template(request: CustomTemplateRequest):
+async def add_custom_template(
+    request: CustomTemplateRequest,
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+):
     """添加自定义模板"""
     try:
         template_service = SimpleTemplateService()
@@ -70,7 +74,11 @@ async def add_custom_template(request: CustomTemplateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/custom/{template_id}")
-async def update_custom_template(template_id: str, request: UpdateTemplateRequest):
+async def update_custom_template(
+    template_id: str, 
+    request: UpdateTemplateRequest,
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+):
     """更新自定义模板"""
     try:
         template_service = SimpleTemplateService()
@@ -93,7 +101,10 @@ async def update_custom_template(template_id: str, request: UpdateTemplateReques
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/custom/{template_id}")
-async def delete_custom_template(template_id: str):
+async def delete_custom_template(
+    template_id: str,
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+):
     """删除自定义模板"""
     try:
         template_service = SimpleTemplateService()

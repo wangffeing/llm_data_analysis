@@ -31,6 +31,10 @@ class Config:
         self.dashscope_api_key = get_env_or_default('DASHSCOPE_API_KEY', '')
         self.lingyun_api_key = get_env_or_default('LINGYUN_API_KEY', '')
         
+        # 权限管理配置
+        self.enable_auth = get_env_or_default('ENABLE_AUTH', 'false').lower() == 'true'
+        self.admin_api_key = get_env_or_default('ADMIN_API_KEY', '')
+        
         # SSE相关配置
         self.sse_batch_interval = float(get_env_or_default('SSE_BATCH_INTERVAL', '0.3'))
         self.sse_max_batch_size = int(get_env_or_default('SSE_MAX_BATCH_SIZE', '8'))
@@ -98,6 +102,10 @@ class Config:
         # 验证API密钥
         if not self.dashscope_api_key:
             errors.append("DASHSCOPE_API_KEY 未配置")
+        
+        # 验证权限管理配置
+        if self.enable_auth and not self.admin_api_key:
+            errors.append("启用权限管理时必须设置 ADMIN_API_KEY")
         
         # 验证配置数据库文件
         if not os.path.exists(self.config_db_path):

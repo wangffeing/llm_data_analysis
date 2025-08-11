@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button, Switch, Tooltip } from 'antd';
-import { DatabaseOutlined, PlusOutlined, SettingOutlined, SyncOutlined, SaveOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, PlusOutlined, SettingOutlined, SyncOutlined, SaveOutlined, KeyOutlined } from '@ant-design/icons';
 import DataSourceModal from './DataSourceModal';
 import { DescriptionUpdateMode } from '../hooks/useXChat';
 import { DESIGN_GUIDE } from '../constants/appConstants'; // 导入分析指南
 import logo from '../resource/logo.png';
 import ConfigModal from './ConfigModal';
+import AdminKeyManager from './AdminKeyManager'; // 新增
 import { FileTextOutlined } from '@ant-design/icons';
 import AnalysisGuide from './AnalysisGuide';
 import HelpGuide from './HelpGuide';
@@ -25,6 +26,7 @@ interface ChatSiderProps {
   onDataSourcesChange?: () => void; // 新增
   onOpenTemplateSelector?: () => void;  // 新增
   onOpenGPTVisTest: () => void; // 新增
+  messages?: any[]; // 新增
 }
 
 const ChatSider: React.FC<ChatSiderProps> = ({
@@ -41,18 +43,44 @@ const ChatSider: React.FC<ChatSiderProps> = ({
   onDataSourcesChange, // 新增
   onOpenTemplateSelector,
   onOpenGPTVisTest, // 新增
+  messages = [], // 新增：添加messages参数并设置默认值
 }) => {
   const [dataSourceModalVisible, setDataSourceModalVisible] = useState(false);
   const [configModalVisible, setConfigModalVisible] = useState(false);
+  const [adminKeyModalVisible, setAdminKeyModalVisible] = useState(false); // 新增
   const [guideVisible, setGuideVisible] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false); // 新增帮助页面状态
 
+  // 获取上传的文件信息
+  const uploadedFiles = useMemo(() => {
+    const files: any[] = [];
+    messages.forEach((msg: any) => {
+      if (msg.files && msg.files.length > 0) {
+        files.push(...msg.files);
+      }
+    });
+    return files;
+  }, [messages]);
+
+  // 判断是否有数据源（数据库或文件）
+  const hasDataSource = selectedDataSource || uploadedFiles.length > 0;
+  const dataSourceType = selectedDataSource ? 'database' : uploadedFiles.length > 0 ? 'file' : 'none';
+
   // 处理分析指南点击
   const handleGuideClick = (guide: any) => {
-    if (onSubmit && selectedDataSource) {
-      // 构建针对当前数据源的分析提示
-      const prompt = `请对 ${selectedDataSource.name} 数据集进行${guide.label}：${guide.description}`;
-      onSubmit(prompt);
+    if (onSubmit && hasDataSource) {
+      let prompt;
+      if (selectedDataSource) {
+        // 针对数据库数据源
+        prompt = `请对 ${selectedDataSource.name} 数据集进行${guide.label}：${guide.description}`;
+      } else if (uploadedFiles.length > 0) {
+        // 针对上传的文件
+        const fileNames = uploadedFiles.map((f: any) => f.name).join('、');
+        prompt = `请对已上传的文件（${fileNames}）进行${guide.label}：${guide.description}`;
+      }
+      if (prompt) {
+        onSubmit(prompt);
+      }
     }
   };
 
@@ -86,16 +114,21 @@ const ChatSider: React.FC<ChatSiderProps> = ({
 
       {/* 占位符区域 - 根据是否选择数据源显示不同内容 */}
       <div style={{ flex: 1, minHeight: '200px' }}>
-        {selectedDataSource ? (
+        {hasDataSource ? (
           // 显示分析指南
           <div style={{ padding: '12px' }}>
             <div style={{ 
               marginBottom: '12px', 
               fontSize: '14px', 
               fontWeight: 'bold',
-              color: '#1677ff'
+              color: dataSourceType === 'database' ? '#1677ff' : '#52c41a'
             }}>
               {DESIGN_GUIDE.label}
+              {dataSourceType === 'file' && (
+                <span style={{ fontSize: '12px', fontWeight: 'normal', marginLeft: '8px' }}>
+                  (基于上传文件)
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {DESIGN_GUIDE.children.map((guide) => (
@@ -109,11 +142,13 @@ const ChatSider: React.FC<ChatSiderProps> = ({
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                     backgroundColor: '#fff',
-                    backgroundImage: 'linear-gradient(123deg, #f0f9ff 0%, #f8f6ff 100%)' 
+                    backgroundImage: dataSourceType === 'database' 
+                      ? 'linear-gradient(123deg, #f0f9ff 0%, #f8f6ff 100%)' 
+                      : 'linear-gradient(123deg, #f6ffed 0%, #f0f9ff 100%)'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#1677ff';
-                    e.currentTarget.style.backgroundColor = '#f6f9ff';
+                    e.currentTarget.style.borderColor = dataSourceType === 'database' ? '#1677ff' : '#52c41a';
+                    e.currentTarget.style.backgroundColor = dataSourceType === 'database' ? '#f6f9ff' : '#f6ffed';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = '#f0f0f0';
@@ -155,7 +190,7 @@ const ChatSider: React.FC<ChatSiderProps> = ({
             color: '#999', 
             fontSize: '14px' 
           }}>
-            选择数据源
+            选择数据源或上传文件
           </div>
         )}
       </div>
@@ -327,6 +362,20 @@ const ChatSider: React.FC<ChatSiderProps> = ({
         onClose={() => setHelpVisible(false)}
       />
       
+      {/* 管理员密钥管理按钮 */}
+      <Button 
+        type="default" 
+        icon={<KeyOutlined />}
+        onClick={() => setAdminKeyModalVisible(true)}
+        style={{ 
+          width: '100%', 
+          marginTop: 8,
+          backgroundImage: 'linear-gradient(123deg,rgb(255, 248, 240) 0%,rgb(255, 243, 224) 100%)'
+        }}
+      >
+        管理员密钥
+      </Button>
+      
       <Button 
         type="default" 
         icon={<SettingOutlined />}
@@ -338,6 +387,12 @@ const ChatSider: React.FC<ChatSiderProps> = ({
       >
         会话配置
       </Button>
+      
+      {/* 管理员密钥管理模态框 */}
+      <AdminKeyManager 
+        visible={adminKeyModalVisible}
+        onClose={() => setAdminKeyModalVisible(false)}
+      />
       
       <ConfigModal 
         visible={configModalVisible}

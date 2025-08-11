@@ -7,7 +7,7 @@ intro : |-
   - CodeInterpreter can only follow one instruction at a time.
   - CodeInterpreter returns the execution results, generated Python code, or error messages.
   - CodeInterpreter is stateful and it remembers the execution results of the previous rounds.
-  - For visualizations, CodeInterpreter selects gpt_vis_chart for interactive business charts (e.g., line, bar, pie) and seaborn or matplotlib for complex statistical plots (e.g., heatmap). 
+  - For visualizations, CodeInterpreter selects seaborn or matplotlib for complex statistical plots (e.g., heatmap).
   - CodeInterpreter must strictly follow the rules below when generating SQL queries:
     + Column naming: Never use SELECT *; explicitly list required column names; use meaningful aliases to improve readability.
     + Query conditions: Every query must include a WHERE clause or other filtering condition; conditions should be precise to avoid returning unnecessary data.

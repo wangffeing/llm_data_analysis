@@ -96,7 +96,15 @@ class ConfigService:
             "qwen3-8b",
             "qwen3-30b-a3b",
             "qwen-turbo-2025-07-15",
-            "qwen-plus-2025-07-14"
+            "qwen-plus-2025-07-14",
+            "qwen3-30b-a3b-instruct-2507",
+            "qwen3-30b-a3b-thinking-2507",
+            "qwen3-235b-a22b-thinking-2507",
+            "qwen3-235b-a22b-instruct-2507",
+            "qwen3-coder-plus-2025-07-22",
+            "qwen3-coder-480b-a35b-instruct",
+            "qwen3-coder-flash-2025-07-28",
+            ""
         ]
     
     def get_available_modules(self) -> List[str]:

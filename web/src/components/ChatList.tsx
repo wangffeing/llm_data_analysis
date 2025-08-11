@@ -204,26 +204,19 @@ const ChatList: React.FC<ChatListProps> = React.memo(({
               type="primary"
               size="small"
               icon={<FileTextOutlined />}
+              // 修改报告按钮的onClick事件，简化传递的数据
               onClick={() => onGenerateReport && onGenerateReport({
-                content: message.content,
-                timestamp: message.timestamp,
-                template_id: message.template_id,
-                analysis_type: message.analysis_type || '数据分析',
-                files: message.files,
-                dataPreview: message.dataPreview,
-                metadata: {
-                  message_id: message.id,
-                  session_id: message.session_id,
-                  data_source: message.selected_table
-                }
-              })}
-            >
-              生成智能报告
-            </Button>
-          </div>
-        );
+                message_id: message.id,
+                // 从当前会话获取session_id，而不是从message对象
+                // 不再传递完整的分析结果，只传递必要的标识信息
+                })}
+              >
+                生成智能报告
+              </Button>
+            </div>
+          );
+        }
       }
-    }
     return null;
   }, [onGenerateReport]);
   

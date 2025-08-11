@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from services.data_source_service import DataSourceService
 from config import get_config
+from auth import verify_admin_permission  # 新增：导入权限验证
 
 router = APIRouter()
 
@@ -84,7 +85,8 @@ async def get_data_sources(
 @router.post("/sources")
 async def create_data_source(
     request: DataSourceCreateRequest,
-    service: DataSourceService = Depends(get_data_source_service)
+    service: DataSourceService = Depends(get_data_source_service),
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
 ):
     """创建数据源"""
     try:
@@ -115,7 +117,8 @@ async def create_data_source(
 async def update_data_source(
     source_name: str,
     request: DataSourceUpdateRequest,
-    service: DataSourceService = Depends(get_data_source_service)
+    service: DataSourceService = Depends(get_data_source_service),
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
 ):
     """更新数据源"""
     try:
@@ -145,7 +148,8 @@ async def update_data_source(
 @router.delete("/sources/{source_name}")
 async def delete_data_source(
     source_name: str,
-    service: DataSourceService = Depends(get_data_source_service)
+    service: DataSourceService = Depends(get_data_source_service),
+    _: bool = Depends(verify_admin_permission)  # 添加权限验证
 ):
     """删除数据源"""
     try:
