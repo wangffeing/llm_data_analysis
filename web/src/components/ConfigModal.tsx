@@ -25,13 +25,14 @@ interface ConfigModalProps {
 }
 
 const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }) => {
-  const { message } = App.useApp(); // 使用Hook方式获取message
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState<TaskWeaverConfig | null>(null);
-  const [options, setOptions] = useState<ConfigOptions>({ models: [], roles: [], modules: [] });
+  const [options, setOptions] = useState<ConfigOptions>({ models: [], roles: [], modules: [], plugins: [] });
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedPlugins, setSelectedPlugins] = useState<string[]>([]); // 新增插件状态
 
   useEffect(() => {
     if (visible) {
@@ -48,6 +49,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
         setConfig(response.config);
         setSelectedModules(response.config['code_interpreter.allowed_modules'] || []);
         setSelectedRoles(response.config['session.roles'] || []);
+        setSelectedPlugins(response.config['code_generator.allowed_plugins'] || []); // 新增插件初始化
         form.setFieldsValue(response.config);
       }
     } catch (error) {
@@ -64,7 +66,8 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
       const configUpdate = {
         ...values,
         'code_interpreter.allowed_modules': selectedModules,
-        'session.roles': selectedRoles
+        'session.roles': selectedRoles,
+        'code_generator.allowed_plugins': selectedPlugins // 新增插件保存
       };
 
       const response = await apiService.updateSessionConfig(sessionId, configUpdate);
@@ -103,16 +106,18 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
 
   const loadOptions = async () => {
     try {
-      const [modelsRes, rolesRes, modulesRes] = await Promise.all([
+      const [modelsRes, rolesRes, modulesRes, pluginsRes] = await Promise.all([
         apiService.getAvailableModels(),
         apiService.getAvailableRoles(),
-        apiService.getAvailableModules()
+        apiService.getAvailableModules(),
+        apiService.getAvailablePlugins() // 新增插件选项加载
       ]);
       
       setOptions({
         models: modelsRes.success ? modelsRes.models : [],
         roles: rolesRes.success ? rolesRes.roles : [],
-        modules: modulesRes.success ? modulesRes.modules : []
+        modules: modulesRes.success ? modulesRes.modules : [],
+        plugins: pluginsRes.success ? pluginsRes.plugins : [] // 新增插件选项
       });
     } catch (error) {
       message.error('加载选项失败');
@@ -224,13 +229,44 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
     },
     {
       key: '5',
+      label: '插件配置', // 新增插件配置标签页
+      children: (
+        <Form form={form} layout="vertical">
+          <Form.Item label="允许的插件">
+            <Select
+              mode="multiple"
+              placeholder="选择允许的插件"
+              value={selectedPlugins}
+              onChange={setSelectedPlugins}
+              style={{ width: '100%' }}
+            >
+              {options.plugins.map(plugin => (
+                <Option key={plugin} value={plugin}>{plugin}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+          
+          <div style={{ marginBottom: 16 }}>
+            <strong>当前插件：</strong>
+            {selectedPlugins.length === 0 ? (
+              <Tag color="default">无插件</Tag>
+            ) : (
+              selectedPlugins.map(plugin => (
+                <Tag key={plugin} color="green" style={{ margin: '2px' }}>
+                  {plugin}
+                </Tag>
+              ))
+            )}
+          </div>
+
+        </Form>
+      )
+    },
+    {
+      key: '6', // 原来的高级配置改为key 6
       label: '高级配置',
       children: (
         <Form form={form} layout="vertical">
-          <Form.Item label="自动插件选择" name="code_generator.enable_auto_plugin_selection" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          
           <Form.Item label="规划器提示压缩" name="planner.prompt_compression" valuePropName="checked">
             <Switch />
           </Form.Item>

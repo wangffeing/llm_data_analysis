@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from services.data_source_service import DataSourceService
 from config import get_config
-from auth import verify_admin_permission  # 新增：导入权限验证
+from auth import verify_admin_permission, verify_admin_permission_cookie
 
 router = APIRouter()
 
@@ -86,7 +86,7 @@ async def get_data_sources(
 async def create_data_source(
     request: DataSourceCreateRequest,
     service: DataSourceService = Depends(get_data_source_service),
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """创建数据源"""
     try:
@@ -118,7 +118,7 @@ async def update_data_source(
     source_name: str,
     request: DataSourceUpdateRequest,
     service: DataSourceService = Depends(get_data_source_service),
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """更新数据源"""
     try:
@@ -149,7 +149,7 @@ async def update_data_source(
 async def delete_data_source(
     source_name: str,
     service: DataSourceService = Depends(get_data_source_service),
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """删除数据源"""
     try:

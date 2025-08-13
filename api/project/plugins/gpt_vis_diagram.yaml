@@ -1,5 +1,5 @@
 name: gpt_vis_diagram
-enabled: false
+enabled: true
 required: false
 description: >-
   Generate GPT-Vis compatible diagrams including flow diagrams and mind maps.

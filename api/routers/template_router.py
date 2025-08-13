@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from services.simple_template_service import SimpleTemplateService
 from pydantic import BaseModel
-from auth import verify_admin_permission  # 添加权限验证导入
+from auth import verify_admin_permission, verify_admin_permission_cookie  # 添加权限验证导入
 
 router = APIRouter()
 
@@ -50,7 +50,7 @@ async def generate_template_prompt(request: TemplatePromptRequest):
 @router.post("/custom")
 async def add_custom_template(
     request: CustomTemplateRequest,
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """添加自定义模板"""
     try:
@@ -77,7 +77,7 @@ async def add_custom_template(
 async def update_custom_template(
     template_id: str, 
     request: UpdateTemplateRequest,
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """更新自定义模板"""
     try:
@@ -103,7 +103,7 @@ async def update_custom_template(
 @router.delete("/custom/{template_id}")
 async def delete_custom_template(
     template_id: str,
-    _: bool = Depends(verify_admin_permission)  # 添加权限验证
+    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
 ):
     """删除自定义模板"""
     try:

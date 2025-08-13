@@ -141,7 +141,7 @@ class SqlPullData(Plugin):
         load_env_config()
 
         # Get database path from environment variable
-        db_path = os.getenv('SQLITE_DB_PATH', 'd:/myproject/2025/llm_data_analysis/api/test_database.db')
+        db_path = self.get_env('DB_PATH')
 
         # Ensure absolute path
         if not os.path.isabs(db_path):

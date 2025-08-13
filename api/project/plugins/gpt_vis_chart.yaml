@@ -1,5 +1,5 @@
 name: gpt_vis_chart
-enabled: false
+enabled: true
 required: false
 description: >
   Generates GPT-Vis charts from a pandas DataFrame. Supports line/area (time series with time, value), column/bar/pie (categorical with category, value). Input data is limited to 100 records, Input df must be clean and summarized (no null values, max 100 records).
@@ -21,11 +21,11 @@ parameters:
   - name: x_field
     type: str
     required: false
-    description: Column name in the DataFrame used as the X-axis or categorical dimension. For pie charts, this represents the category field.
+    description: X-axis field name (optional, will auto-infer). Line/area charts suit time fields, column/bar/pie charts suit categorical fields.
   - name: y_field
     type: str
     required: false
-    description: Column name in the DataFrame used as the Y-axis (numerical values). For pie charts, this represents the value field.
+    description: Y-axis field name (optional, will auto-infer). Must be numeric field representing values
   - name: title
     type: str
     required: false
@@ -33,22 +33,22 @@ parameters:
   - name: series_field
     type: str
     required: false
-    description: Column name used for grouping data, displayed as separate colors or series in the chart.
+    description: Grouping field name for creating multi-series charts (different colors/series)
   - name: stack
     type: bool
     required: false
     default: false
-    description: Set to true to enable stacked chart display. Applies to `area`, `bar`, `column` charts and requires `series_field`.
+    description: Enable stacked style, applies to area, bar, column charts, requires series_field
   - name: group
     type: bool
     required: false
     default: false
-    description: Set to true to enable grouped chart display. Applies to `bar`, `column` charts and requires `series_field`.
+    description: SEnable grouped style, applies to bar, column charts, requires series_field
 
 returns:
   - name: markdown_content
     type: str
-    description: GPT-Vis compatible Markdown content with a `vis-chart` code block.
+    description: GPT-Vis compliant Markdown content with vis-chart code block, ready for frontend rendering.
   - name: summary
     type: str
     description: Markdown summary of the generated chart.

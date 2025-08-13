@@ -1,0 +1,30 @@
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+
+# Backup files
+*.backup
+*_backup
+*_bak
+taskweaver_config.json.backup
+.env.backup*
+.env_bak*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Cache and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/

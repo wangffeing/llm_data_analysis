@@ -19,7 +19,7 @@ class SSEMessageType(Enum):
     POST_ERROR = "post_error"
     POST_MESSAGE_UPDATE = "post_message_update"
     POST_ATTACHMENT_UPDATE = "post_attachment_update"
-    POST_STATE_UPDATE = "post_status_update"
+    POST_STATUS_UPDATE = "post_status_update"
     POST_SEND_TO_UPDATE = "post_send_to_update"
     FILE_GENERATED = "file_generated"
     HEARTBEAT = "heartbeat"

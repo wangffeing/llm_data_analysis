@@ -8,6 +8,26 @@ from taskweaver.memory.plugin import PluginEntry, PluginRegistry
 from taskweaver.utils import generate_md5_hash, write_yaml
 
 
+class FilteredPluginRegistry:
+    """包装插件注册表以支持过滤"""
+    def __init__(self, plugin_registry: PluginRegistry, allowed_plugins: List[str]):
+        self.plugin_registry = plugin_registry
+        self.allowed_plugins = allowed_plugins
+        
+    def get_list(self) -> List[PluginEntry]:
+        """返回过滤后的插件列表"""
+        all_plugins = self.plugin_registry.get_list()
+        if not self.allowed_plugins:
+            return []
+        
+        return [plugin for plugin in all_plugins if plugin.name in self.allowed_plugins]
+    
+    @property
+    def file_glob(self):
+        """代理到原始注册表的file_glob属性"""
+        return self.plugin_registry.file_glob
+
+
 class SelectedPluginPool:
     def __init__(self):
         self.selected_plugin_pool = []

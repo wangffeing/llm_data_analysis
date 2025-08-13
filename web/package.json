@@ -18,6 +18,7 @@
     "antd-style": "^3.6.0",
     "axios": "^1.6.0",
     "dayjs": "^1.11.10",
+    "dompurify": "^3.2.6",
     "papaparse": "^5.5.3",
     "prismjs": "^1.30.0",
     "react": "^19.1.0",

@@ -24,6 +24,18 @@ export const useAppState = (messageApi?: any) => {
     }
   }, []);
 
+  // 新增：完整状态重置函数
+  const resetAllState = useCallback(() => {
+    setCurrentSession(null);
+    setSelectedDataSource(null);
+    setDataPreview(null);
+    setFilePreview(null);
+    setAttachedFiles([]);
+    setInputValue('');
+    clearHeartbeatInterval();
+    console.log('✅ 所有状态已重置');
+  }, [clearHeartbeatInterval]);
+
   const setupHeartbeatInterval = useCallback((sessionId: string) => {
     clearHeartbeatInterval();
     heartbeatIntervalRef.current = setInterval(async () => {
@@ -33,15 +45,14 @@ export const useAppState = (messageApi?: any) => {
         console.warn(`心跳失败: ${sessionId}`, error);
         
         // 如果是404错误，说明会话已被清理
-        if (error.message?.includes('404') || error.response?.status === 404) {
+        if (error.message?.includes('404') || error.response?.status === 404 || error.message?.includes('会话已过期')) {
           console.log('会话已被服务器清理，重置本地状态');
-          setCurrentSession(null);
-          clearHeartbeatInterval();
+          resetAllState();
           messageApi?.warning('会话已过期，请创建新会话');
         }
       }
     }, 120 * 1000); // 改为2min，给后端更多缓冲时间
-  }, [clearHeartbeatInterval, messageApi]);
+  }, [clearHeartbeatInterval, resetAllState, messageApi]);
 
   const createNewSession = useCallback(async () => {
     if (loading) return;
@@ -135,11 +146,23 @@ export const useAppState = (messageApi?: any) => {
         setLoading(false);
       }
     };
+
     initializeApp();
+
+    // 监听全局状态重置事件
+    const handleSessionInvalid = (event: CustomEvent) => {
+      console.log('收到会话无效事件:', event.detail);
+      resetAllState();
+      messageApi?.warning('会话已过期，请创建新会话');
+    };
+
+    window.addEventListener('session:invalid', handleSessionInvalid as EventListener);
+
     return () => {
       clearHeartbeatInterval();
+      window.removeEventListener('session:invalid', handleSessionInvalid as EventListener);
     };
-  }, [setupHeartbeatInterval, clearHeartbeatInterval, messageApi]);
+  }, [setupHeartbeatInterval, clearHeartbeatInterval, resetAllState, messageApi]);
 
   return {
     attachmentsOpen,
@@ -165,6 +188,7 @@ export const useAppState = (messageApi?: any) => {
     refreshDataSources,
     filePreview,
     setFilePreview,
+    resetAllState, // 新增导出
   };
 };
 

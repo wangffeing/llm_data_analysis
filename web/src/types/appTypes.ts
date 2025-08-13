@@ -45,7 +45,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-  status: 'sending' | 'sent' | 'delivered' | 'error';
+  status: 'sending' | 'sent' | 'delivered' | 'error' | 'streaming';
   thoughtSteps?: ThoughtStep[];
   attachments?: any[];
   dataPreview?: any;
@@ -84,9 +84,9 @@ export interface ChatSenderProps {
 export interface TaskWeaverConfig {
   "llm.api_type": string;
   "llm.model": string;
-  "llm.api_key"?: string;
   "execution_service.kernel_mode": string;
   "code_generator.enable_auto_plugin_selection": string;
+  "code_generator.allowed_plugins": string[]; // 新增插件配置
   "code_interpreter.code_verification_on": string;
   "code_interpreter.allowed_modules": string[];
   "logging.log_file": string;
@@ -102,6 +102,7 @@ export interface ConfigOptions {
   models: string[];
   roles: string[];
   modules: string[];
+  plugins: string[]; // 新增插件选项
 }
 
 export interface ConfigUpdateRequest {

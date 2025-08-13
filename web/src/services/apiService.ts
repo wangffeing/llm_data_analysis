@@ -10,21 +10,14 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // 重要：允许发送 cookies
 });
 
-// 请求拦截器
+// 请求拦截器 - 简化，因为现在使用 cookies
 apiClient.interceptors.request.use(
   (config) => {
-    // 获取管理员密钥
-    const adminKey = localStorage.getItem('adminKey') || process.env.REACT_APP_ADMIN_KEY;
-    
-    // 判断是否是需要权限的请求
-    const needsAuth = isAdminRequest(config.url || '', config.method || '');
-    
-    if (needsAuth && adminKey) {
-      config.headers['X-Admin-Key'] = adminKey;
-    }
-    
+    // 移除 localStorage 逻辑，改为依赖 cookies
+    // Cookie 会自动包含在请求中
     return config;
   },
   (error) => {
@@ -42,11 +35,23 @@ apiClient.interceptors.response.use(
     console.error('响应错误:', error.response?.status, error.response?.data);
     
     if (error.response?.status === 401) {
-      throw new Error('需要管理员权限，请设置正确的管理员密钥');
+      // 认证过期，可以触发重新登录
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+      throw new Error('登录已过期，请重新登录');
     } else if (error.response?.status === 403) {
-      throw new Error('管理员密钥无效，请检查密钥是否正确');
+      throw new Error('权限不足，请检查管理员权限');
     } else if (error.response?.status === 404) {
-      throw new Error('请求的资源不存在 (404)');
+      // 检查是否是会话相关的404错误
+      const url = error.config?.url || '';
+      if (url.includes('/session/') || url.includes('/chat/')) {
+        // 触发全局状态重置事件
+        window.dispatchEvent(new CustomEvent('session:invalid', { 
+          detail: { sessionId: url.match(/\/session\/([^\/]+)/)?.[1] }
+        }));
+        throw new Error('会话已过期，请创建新会话');
+      } else {
+        throw new Error('请求的资源不存在 (404)');
+      }
     } else if (error.response?.status === 500) {
       throw new Error('服务器内部错误 (500)');
     } else if (error.code === 'ECONNABORTED') {
@@ -176,6 +181,16 @@ export const apiService = {
   // 健康检查
   healthCheck: (): Promise<any> => apiClient.get('/health'),
   
+  // 管理员认证相关
+  adminLogin: (adminKey: string): Promise<{success: boolean, message: string, expires_at: string}> => 
+    apiClient.post('/api/system/admin/login', { admin_key: adminKey }),
+  
+  adminLogout: (): Promise<{success: boolean, message: string}> => 
+    apiClient.post('/api/system/admin/logout'),
+  
+  getAdminStatus: (): Promise<{is_logged_in: boolean, timestamp: string}> => 
+    apiClient.get('/api/system/admin/status'),
+  
   // 数据源相关
   getDataSources: (): Promise<DataSourcesResponse> => apiClient.get('/api/data/sources'),
   getDataPreview: (sourceName: string, limit: number = 10): Promise<DataPreviewResponse> => 
@@ -203,8 +218,9 @@ export const apiService = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      withCredentials: true, // 包含 cookies
       timeout: 120000,
-    }).then(response => response.data); // ✅ 确保返回正确的数据结构
+    }).then(response => response.data);
   },
   
   // 发送聊天消息
@@ -286,4 +302,23 @@ export const apiService = {
   generateIntelligentReport: (request: ReportGenerationRequest): Promise<ReportResponse> => 
     apiClient.post('/api/reports/generate', request),
   
+  // 验证管理员密钥（向后兼容）
+  verifyAdminKey: (adminKey: string): Promise<{success: boolean, message: string}> => {
+    const tempClient = axios.create({
+      baseURL: API_BASE_URL,
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': adminKey
+      }
+    });
+    return tempClient.post('/api/system/verify-admin-key');
+  }, // 这里需要逗号
+
+  // 插件相关API - 新增
+  updateSessionPlugins: (sessionId: string, plugins: string[]): Promise<ConfigUpdateResponse> => 
+    apiClient.put(`/api/config/session/${sessionId}/plugins`, { plugins }),
+
+  getAvailablePlugins: (): Promise<{success: boolean, plugins: string[]}> => 
+    apiClient.get('/api/config/options/plugins'),
 };

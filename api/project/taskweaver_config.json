@@ -1,7 +1,7 @@
 {
     "llm.api_type": "qwen",
     "llm.model": "qwen3-14b",
-    "llm.api_key": "sk-081340f2de3547508f206da7ef40376e",
+    "llm.api_key": "**",
     "execution_service.kernel_mode": "local",
     "code_generator.enable_auto_plugin_selection": "false",
     "code_interpreter.code_verification_on": "false",

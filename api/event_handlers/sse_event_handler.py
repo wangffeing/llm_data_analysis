@@ -147,20 +147,21 @@ class SSEEventHandler(SessionEventHandlerBase):
                     })
                 else:
                     pass
-                    # 发送增量更新（可选，用于实时显示）
-                    # self._send_message_immediate(SSEMessageType.POST_MESSAGE_UPDATE, {
-                    #     **base_data,
-                    #     "content": content,
-                    #     "type": "message_increment",
-                    #     "is_complete": False,
-                    #     "total_content": self.current_message
-                    # })
+                    # 启用增量更新 - 取消注释这部分
+                    # if content:  # 只有当有新内容时才发送
+                    #     self._send_message_immediate(SSEMessageType.POST_MESSAGE_UPDATE, {
+                    #         **base_data,
+                    #         "content": content,
+                    #         "type": "message_increment",
+                    #         "is_complete": False,
+                    #         "total_content": self.current_message
+                    #     })
                 
             elif type == PostEventType.post_status_update:
                 status = msg or (extra.get("status", "") if extra else "")
                 self.current_post_status = status
                 
-                self._send_message_immediate(SSEMessageType.POST_STATE_UPDATE, {
+                self._send_message_immediate(SSEMessageType.POST_STATUS_UPDATE, {
                     **base_data,
                     "status": status,
                     "type": "status_update"
@@ -180,7 +181,7 @@ class SSEEventHandler(SessionEventHandlerBase):
                 self._send_message_immediate(SSEMessageType.POST_SEND_TO_UPDATE, {
                     **base_data,
                     "send_to": send_to,
-                    "type": "send_to_update"
+                    "type": "status_update"
                 })
                 
             elif type == PostEventType.post_attachment_update:
@@ -251,17 +252,18 @@ class SSEEventHandler(SessionEventHandlerBase):
                             })
                 else:
                     pass
-                    # 发送增量附件更新
-                    # self._send_message_immediate(SSEMessageType.POST_ATTACHMENT_UPDATE, {
-                    #     **base_data,
-                    #     "attachment": {
-                    #         "id": attachment_id,
-                    #         "type": attachment_type,
-                    #         "content": msg,
-                    #         "is_complete": False
-                    #     },
-                    #     "type": "attachment_increment"
-                    # })
+                    # 启用增量附件更新 - 取消注释这部分
+                    # if msg and msg.strip():  # 只有当有新内容时才发送
+                    #     self._send_message_immediate(SSEMessageType.POST_ATTACHMENT_UPDATE, {
+                    #         **base_data,
+                    #         "attachment": {
+                    #             "id": attachment_id,
+                    #             "type": attachment_type,
+                    #             "content": msg,
+                    #             "is_complete": False
+                    #         },
+                    #         "type": "attachment_increment"
+                    #     })
 
         except Exception as e:
             logger.error(f"[{self.session_id}] 处理帖子事件失败: {type.value}, {e}")

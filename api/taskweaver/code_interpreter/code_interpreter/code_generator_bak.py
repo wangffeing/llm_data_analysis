@@ -45,8 +45,6 @@ class CodeGeneratorConfig(RoleConfig):
             False,
         )
         self.auto_plugin_selection_topk = self._get_int("auto_plugin_selection_topk", 3)
-        # 添加插件过滤配置
-        self.allowed_plugins = self._get_list("allowed_plugins", [])
 
         self.llm_alias = self._get_str("llm_alias", default="", required=False)
 
@@ -78,10 +76,7 @@ class CodeGenerator(Role):
 
         self.conversation_head_template = self.prompt_data["conversation_head"]
         self.user_message_head_template = self.prompt_data["user_message_head"]
-        
-        # 应用插件过滤
-        self.plugin_pool = self._filter_plugins(plugin_registry.get_list())
-        
+        self.plugin_pool = plugin_registry.get_list()
         self.query_requirements_template = self.prompt_data["requirements"]
         self.response_json_schema = json.loads(self.prompt_data["response_json_schema"])
 
@@ -92,9 +87,7 @@ class CodeGenerator(Role):
         self.compression_template = read_yaml(self.config.compression_prompt_path)["content"]
 
         if self.config.enable_auto_plugin_selection:
-            # 为插件选择器也应用过滤
-            filtered_registry = FilteredPluginRegistry(plugin_registry, self.config.allowed_plugins)
-            self.plugin_selector = PluginSelector(filtered_registry, self.llm_api)
+            self.plugin_selector = PluginSelector(plugin_registry, self.llm_api)
             self.plugin_selector.load_plugin_embeddings()
             logger.info("Plugin embeddings loaded")
             self.selected_plugin_pool = SelectedPluginPool()
@@ -102,22 +95,6 @@ class CodeGenerator(Role):
         self.experience_generator = experience_generator
 
         self.logger.info("CodeGenerator initialized successfully")
-
-    def _filter_plugins(self, all_plugins: List[PluginEntry]) -> List[PluginEntry]:
-        """根据配置过滤插件"""
-        if not self.config.allowed_plugins:
-            # 严格模式：未选择任何插件 => 不允许任何插件
-            return []
-        
-        filtered_plugins = [
-            plugin for plugin in all_plugins 
-            if plugin.name in self.config.allowed_plugins
-        ]
-        
-        self.logger.info(f"Plugin filtering enabled. Allowed plugins: {self.config.allowed_plugins}")
-        self.logger.info(f"Filtered plugins: {[p.name for p in filtered_plugins]}")
-        
-        return filtered_plugins
 
     def configure_verification(
         self,

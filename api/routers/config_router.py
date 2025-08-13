@@ -23,6 +23,10 @@ class AllowedModulesRequest(BaseModel):
     session_id: str
     modules: List[str]
 
+class AllowedPluginsRequest(BaseModel):
+    session_id: str
+    plugins: List[str]
+
 class LLMConfigRequest(BaseModel):
     session_id: str
     model: str
@@ -137,6 +141,33 @@ async def update_session_allowed_modules(
         logger.error(f"更新会话允许模块列表失败: {e}")
         raise HTTPException(status_code=500, detail="更新会话允许模块列表失败")
 
+@router.put("/session/{session_id}/plugins")
+async def update_session_allowed_plugins(
+    session_id: str,
+    plugins_data: dict,
+    config_service: ConfigService = Depends(get_config_service)
+):
+    """更新会话允许的插件列表"""
+    try:
+        plugins = plugins_data.get("plugins", [])
+        session_manager = get_session_manager()
+        
+        # 验证插件
+        if not config_service.validate_plugins(plugins):
+            raise HTTPException(status_code=400, detail="插件验证失败")
+        
+        success = session_manager.update_session_config(
+            session_id,
+            {"code_generator.allowed_plugins": plugins}
+        )
+        if success:
+            return {"success": True, "message": "会话允许插件列表更新成功"}
+        else:
+            raise HTTPException(status_code=400, detail="会话允许插件列表更新失败")
+    except Exception as e:
+        logger.error(f"更新会话允许插件列表失败: {e}")
+        raise HTTPException(status_code=500, detail="更新会话允许插件列表失败")
+
 # 保留原有的全局配置选项API
 @router.get("/options/models")
 async def get_available_models(config_service: ConfigService = Depends(get_config_service)):
@@ -167,3 +198,13 @@ async def get_available_modules(config_service: ConfigService = Depends(get_conf
     except Exception as e:
         logger.error(f"获取可用模块失败: {e}")
         raise HTTPException(status_code=500, detail="获取可用模块失败")
+
+@router.get("/options/plugins")
+async def get_available_plugins(config_service: ConfigService = Depends(get_config_service)):
+    """获取可用的插件列表"""
+    try:
+        plugins = config_service.get_available_plugins()
+        return {"success": True, "plugins": plugins}
+    except Exception as e:
+        logger.error(f"获取可用插件失败: {e}")
+        raise HTTPException(status_code=500, detail="获取可用插件失败")

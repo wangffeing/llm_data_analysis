@@ -3,8 +3,8 @@ import Prism from 'prismjs';
 import type { Components } from 'react-markdown';
 import { GPTVis } from '@antv/gpt-vis';
 import { Alert } from 'antd';
+import DOMPurify from 'dompurify';
 
-// 确保你已经导入了 Python 语言包和 CSS 主题
 import 'prismjs/components/prism-python';
 import 'prismjs/themes/prism.css';
 import '../styles/markdownComponents.css';
@@ -26,15 +26,17 @@ const markdownComponents: Components = {
       try {
         // 使用 Prism.js 高亮代码
         const codeString = String(children).trim();
-        const highlighted = Prism.highlight(codeString, Prism.languages.python, 'python');
         
-        // 返回高亮后的 HTML 结构，添加容器样式
+        // 在 dangerouslySetInnerHTML 前添加净化
+        const highlighted = Prism.highlight(codeString, Prism.languages.python, 'python');
+        const sanitizedHighlighted = DOMPurify.sanitize(highlighted);
+        
         return (
           <div className="thought-chain-content">
             <pre className="code-block">
               <code 
                 className={className} 
-                dangerouslySetInnerHTML={{ __html: highlighted }}
+                dangerouslySetInnerHTML={{ __html: sanitizedHighlighted }}
                 {...props}
               />
             </pre>

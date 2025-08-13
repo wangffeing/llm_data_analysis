@@ -309,7 +309,7 @@ const ChatSider: React.FC<ChatSiderProps> = ({
         >
           选择分析模板
         </Button>
-        <Button
+        {/* <Button
           type="default"
           icon={<ExperimentOutlined />}
           onClick={onOpenGPTVisTest}
@@ -321,7 +321,7 @@ const ChatSider: React.FC<ChatSiderProps> = ({
           }}
         >
           GPT-Vis 测试
-        </Button>
+        </Button> */}
 
         <div style={{ display: 'flex'}}>
           <Button

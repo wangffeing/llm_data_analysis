@@ -41,8 +41,27 @@ ipynb_checkpoints
 *.swp
 *.swo
 
-# Environment variables
+# Environment variables and sensitive files
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Backup files containing sensitive information
+*.backup
+*_backup
+*_bak
+taskweaver_config.json.backup
+.env.backup*
+.env_bak*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
 .venv
 env/
 venv/

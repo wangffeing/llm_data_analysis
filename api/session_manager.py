@@ -80,13 +80,14 @@ class SessionManager:
             "llm.model": "qwen3-14b",
             "execution_service.kernel_mode": "local",
             "code_generator.enable_auto_plugin_selection": "false",
+            "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置
             "code_interpreter.code_verification_on": "false",
             "code_interpreter.allowed_modules": ["pandas", "matplotlib", "numpy", "sklearn", "scipy", "seaborn", "datetime", "typing", "json"],
             "logging.log_file": "taskweaver.log",
             "logging.log_folder": "logs",
             "logging.log_level": "WARNING",
-            "planner.prompt_compression": "false",
-            "code_generator.prompt_compression": "false",
+            "planner.prompt_compression": "true",
+            "code_generator.prompt_compression": "true",
             "session.max_internal_chat_round_num": 20,
             "session.roles": ["planner", "code_interpreter", "recepta"]
         }
@@ -206,6 +207,16 @@ class SessionManager:
                 conversation_id = str(uuid.uuid4())
                 created_at = datetime.now()
                 
+                # 提取元信息（不要混入 TaskWeaver 的 session_config）
+                meta = {}
+                if custom_config:
+                    # 拷贝避免修改调用方传入对象
+                    cfg_copy = copy.deepcopy(custom_config)
+                    for k in ["client_ip", "user_agent", "is_admin_session", "created_by"]:
+                        if k in cfg_copy:
+                            meta[k] = cfg_copy.pop(k)
+                    custom_config = cfg_copy  # 剩余才是真正的 TaskWeaver 配置
+
                 # 合并默认配置和自定义配置
                 session_config = copy.deepcopy(self.default_config)
                 if custom_config:
@@ -219,7 +230,10 @@ class SessionManager:
                     "created_at": created_at.isoformat(),
                     "last_activity": created_at,
                     "status": "active",
-                    "user_agent": None,
+                    "client_ip": meta.get("client_ip"),
+                    "user_agent": meta.get("user_agent"),
+                    "is_admin_session": bool(meta.get("is_admin_session", False)),
+                    "created_by": meta.get("created_by"),
                     "last_heartbeat": created_at,
                     "workspace_path": None,
                     "session_config": session_config,
@@ -383,18 +397,33 @@ class SessionManager:
         """删除整个工作空间目录（含安全路径检查）"""
         try:
             if workspace_path and os.path.exists(workspace_path):
-                safe_base = "/project/workspace/sessions" 
+                # 修正安全路径检查 - 使用正确的基础路径
+                safe_base = os.path.abspath(self.get_workspace_base_dir())
                 abs_path = os.path.abspath(workspace_path)
-                if not abs_path.startswith(os.path.normpath(safe_base)):
+                if not abs_path.startswith(safe_base):
                     logger.warning(f"拒绝删除非工作空间路径: {workspace_path}")
                     return
 
-                shutil.rmtree(abs_path)
-                logger.info(f"已删除工作空间目录: {abs_path}")
+                # 支持模式匹配删除
+                if "*" in workspace_path or "session_" in workspace_path:
+                    import glob
+                    for path in glob.glob(workspace_path):
+                        if os.path.exists(path):
+                            shutil.rmtree(path)
+                            logger.info(f"已删除工作空间目录: {path}")
+                else:
+                    shutil.rmtree(abs_path)
+                    logger.info(f"已删除工作空间目录: {abs_path}")
             else:
                 logger.debug(f"工作空间目录不存在或路径无效: {workspace_path}")
         except Exception as e:
             logger.error(f"清理工作空间失败 {workspace_path}: {e}")
+    
+    def get_workspace_base_dir(self) -> str:
+        """获取工作空间基础目录"""
+        from config import get_config
+        config = get_config()
+        return os.path.join(config.taskweaver_project_path, "workspace", "sessions")
 
     def delete_session(self, session_id: str, chat_service=None) -> bool:
         """删除指定的会话（增强清理）"""
@@ -504,133 +533,79 @@ class SessionManager:
 
     def get_session_message_history(self, session_id: str) -> List[Dict]:
         with self._lock:
-            return self.sessions.get(session_id)
+            session_data = self.sessions.get(session_id)
+            if session_data:
+                return session_data.get("messages", [])
+            return []
 
     def get_session_stats(self) -> Dict:
         with self._lock:
-            memory_info = self._memory_monitor.get_memory_usage()
             total_sessions = len(self.sessions)
             active_sessions = sum(1 for s in self.sessions.values() if s.get("status") == "active")
+            memory_info = self._memory_monitor.get_memory_usage()
             
             return {
                 "total_sessions": total_sessions,
                 "active_sessions": active_sessions,
-                "max_sessions": self.max_sessions,
                 "cleanup_interval_minutes": self.cleanup_interval_minutes,
-                "memory_info": memory_info,
-                "memory_threshold_percent": self.memory_threshold_percent,
-                "force_cleanup_threshold_percent": self.force_cleanup_threshold_percent,
-                "stats": self._stats.copy(),
-                "session_list": list(self.sessions.keys())[-10:]  # 最近10个会话
+                "max_sessions": self.max_sessions,
+                "memory_usage": memory_info,
+                "cleanup_stats": self._stats
             }
-    
+
     def force_memory_cleanup(self) -> Dict:
-        logger.info("手动触发内存清理")
-        initial_memory = self._memory_monitor.get_memory_usage()
-        
-        self._force_cleanup()
-        gc.collect()
-        
-        final_memory = self._memory_monitor.get_memory_usage()
-        
-        return {
-            "initial_memory": initial_memory,
-            "final_memory": final_memory,
-            "memory_saved_mb": initial_memory["rss_mb"] - final_memory["rss_mb"],
-            "sessions_remaining": len(self.sessions)
-        }
-    
+        """手动触发内存清理"""
+        try:
+            before_memory = self._memory_monitor.get_memory_usage()
+            
+            # 执行强制清理
+            self._force_cleanup()
+            
+            # 强制垃圾回收
+            import gc
+            collected = gc.collect()
+            
+            after_memory = self._memory_monitor.get_memory_usage()
+            
+            return {
+                "before_memory": before_memory,
+                "after_memory": after_memory,
+                "objects_collected": collected,
+                "sessions_cleaned": self._stats["total_cleaned"]
+            }
+        except Exception as e:
+            logger.error(f"手动内存清理失败: {e}")
+            return {"error": str(e)}
+
     def shutdown(self) -> None:
+        """关闭SessionManager并清理所有资源"""
         logger.info("开始关闭SessionManager...")
         
+        # 取消定时器
         if self._cleanup_timer:
             self._cleanup_timer.cancel()
             self._cleanup_timer = None
-
+        
+        # 清理所有会话
         self.clear_all_sessions()
+        
+        # 强制垃圾回收
+        import gc
         gc.collect()
         
-        logger.info(f"SessionManager已关闭，统计信息: {self._stats}")
-
-    def list_sessions(self) -> List[str]:
-        with self._lock:
-            return list(self.sessions.keys())
-
-    def clear_all_sessions(self) -> None:
-        with self._lock:
-            session_ids = list(self.sessions.keys())
-            for session_id in session_ids:
-                self.delete_session(session_id)
-            
-            logger.info(f"清理了 {len(session_ids)} 个会话")
-
-    def get_conversation_id(self, session_id: str) -> str:
-        with self._lock:
-            return self.conversation_ids.get(session_id, "")
-
-    def cleanup_inactive_sessions(self, timeout_minutes: int = 30) -> int:
-        activity_cutoff = datetime.now() - timedelta(minutes=timeout_minutes)
-        heartbeat_cutoff = datetime.now() - timedelta(minutes=2)  # 心跳超时设为2分钟
-        inactive_sessions = []
-
-        with self._lock:
-            for sid, data in self.sessions.items():
-                last_activity = data.get("last_activity")
-                last_heartbeat = data.get("last_heartbeat")
-
-                is_inactive = False
-                if isinstance(last_activity, str):
-                    try:
-                        last_activity = datetime.fromisoformat(last_activity)
-                    except ValueError:
-                        last_activity = None
-                
-                if last_activity and last_activity < activity_cutoff:
-                    is_inactive = True
-
-                is_heartbeat_lost = False
-                if not is_inactive:
-                    if isinstance(last_heartbeat, str):
-                        try:
-                            last_heartbeat = datetime.fromisoformat(last_heartbeat)
-                        except ValueError:
-                            last_heartbeat = None
-                    
-                    if last_heartbeat and last_heartbeat < heartbeat_cutoff:
-                        is_heartbeat_lost = True
-
-                if is_inactive or is_heartbeat_lost:
-                    logger.info(
-                        f"将清理会话 {sid}: "
-                        f"inactive={is_inactive}, heartbeat_lost={is_heartbeat_lost}"
-                    )
-                    inactive_sessions.append(sid)
-
-            for session_id in inactive_sessions:
-                self.delete_session(session_id)
-
-        logger.info(f"清理了 {len(inactive_sessions)} 个非活跃会话")
-        return len(inactive_sessions)
-
-    def get_session_message_history(self, session_id: str) -> List[Dict]:
-        with self._lock:
-            return self.sessions.get(session_id)
-
-    def get_session_stats(self) -> Dict:
-        with self._lock:
-            total_sessions = len(self.sessions)
-            active_sessions = sum(1 for s in self.sessions.values() if s.get("status") == "active")
-            
-            return {
-                "total_sessions": total_sessions,
-                "active_sessions": active_sessions,
-                "cleanup_interval_minutes": self.cleanup_interval_minutes
-            }
-    
-    def shutdown(self) -> None:
-        if self._cleanup_timer:
-            self._cleanup_timer.cancel()
-            self._cleanup_timer = None
-        
-        self.clear_all_sessions()
         logger.info("SessionManager已关闭")
+    
+    def get_sessions_by_ip(self, client_ip: str, only_active: bool = True) -> List[str]:
+        """
+        根据客户端 IP 返回会话 ID 列表。
+        - only_active=True 时，仅统计 status == 'active' 的会话。
+        """
+        if not client_ip:
+            return []
+        with self._lock:
+            result = []
+            for sid, data in self.sessions.items():
+                if data.get("client_ip") == client_ip:
+                    if (not only_active) or (data.get("status") == "active"):
+                        result.append(sid)
+            return result

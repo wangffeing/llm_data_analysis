@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export enum MessageType {
   ROUND_START = 'round_start',
   ROUND_END = 'round_end',
-  ROUND_ERROR = 'round_error',
+  ROUND_ERROR = 'error',
   POST_START = 'post_start',
   POST_END = 'post_end',
   POST_ERROR = 'post_error',
@@ -266,4 +266,3 @@ export const useSSE = ({ sessionId, onMessage, onError, messageApi }: UseSSEProp
     retryCount 
   };
 };
-
