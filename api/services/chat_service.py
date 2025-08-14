@@ -31,8 +31,8 @@ class ChatService:
                  session_manager: SessionManager,
                  taskweaver_app,
                  sse_service: SSEService,
-                 max_workers: int = 10,
-                 task_timeout: int = 1200):
+                 max_workers: int = 5,
+                 task_timeout: int = 1800):
         self.session_manager = session_manager
         self.base_taskweaver_app = taskweaver_app
         self.sse_service = sse_service

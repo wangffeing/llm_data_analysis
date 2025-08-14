@@ -17,5 +17,15 @@
     "planner.prompt_compression": "true",
     "code_generator.prompt_compression": "true",
     "session.max_internal_chat_round_num": 20,
-    "session.roles": ["planner", "code_interpreter", "recepta"]
+    "session.roles": ["planner", "code_interpreter", "recepta"],
+    "ext_llms.llm_configs": {
+        "planner_optimized": {
+            "api_type": "qwen",
+            "model": "qwen3-32b",
+            "api_key": "**",
+            "temperature": 0.1,
+            "top_p": 0.8
+        }
+    },
+    "planner.llm_alias": "planner_optimized"
 }

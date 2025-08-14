@@ -144,8 +144,9 @@ class ConfigService:
         """获取可用的Python模块列表"""
         return [
             "pandas", "matplotlib", "numpy", "sklearn", "scipy", 
-            "seaborn", "datetime", "typing", "json", "requests",
-            "plotly", "bokeh", "altair", "openpyxl", "xlrd"
+            "seaborn", "datetime", "typing", "json", "statsmodels",
+            "plotly", "bokeh", "altair", "openpyxl", "xlrd", "beautifulsoup4",
+            "wordcloud", "collections"
         ]
     
     def get_available_plugins(self) -> List[str]:
