@@ -111,8 +111,7 @@ def sanitize_filename(filename: str) -> str:
 
 @router.post("/upload")
 async def upload_files(
-    files: List[UploadFile] = File(...),
-    _: bool = Depends(verify_admin_permission)
+    files: List[UploadFile] = File(...)
 ):
     """安全的文件上传"""
     try:

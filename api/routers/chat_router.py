@@ -67,8 +67,8 @@ async def send_message(
     message.content = InputValidator.sanitize_string(message.content, 10000)
     
     # 验证表名（如果提供）
-    if hasattr(message, 'selected_table') and message.selected_table:
-        message.selected_table = InputValidator.validate_table_name(message.selected_table)
+    # if hasattr(message, 'selected_table') and message.selected_table:
+    #     message.selected_table = InputValidator.validate_table_name(message.selected_table)
 
     try:
         # 后台处理消息

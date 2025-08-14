@@ -92,7 +92,6 @@ class InputValidator:
         # 只允许字母、数字、下划线
         if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', table_name):
             raise HTTPException(status_code=400, detail="表名格式无效")
-        
         if len(table_name) > 64:
             raise HTTPException(status_code=400, detail="表名过长")
         
