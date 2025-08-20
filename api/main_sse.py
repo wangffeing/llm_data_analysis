@@ -61,10 +61,14 @@ app = FastAPI(
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 在生产环境中设置为具体域名
-    allow_credentials=True,  # 允许携带 cookies
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://10.120.83.135:18000",
+        "http://10.120.83.135:18000/analysis",  # 添加新的路径
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 注册路由

@@ -17,7 +17,6 @@ import {
   ExperimentOutlined, // 新增：高级统计分析方法图标
   RobotOutlined // 新增：机器学习模型选择指南图标
 } from '@ant-design/icons';
-import { Descriptions } from 'antd';
 
 // #region --- 类型定义 (为更丰富的数据结构更新) ---
 export interface TermDefinition {

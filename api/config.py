@@ -35,6 +35,12 @@ class Config:
         self.enable_auth = get_env_or_default('ENABLE_AUTH', 'false').lower() == 'true'
         self.admin_api_key = get_env_or_default('ADMIN_API_KEY', '')
         
+        # 用户验证配置
+        self.enable_user_verification = get_env_or_default('ENABLE_USER_VERIFICATION', 'false').lower() == 'true'
+        self.user_verification_api_url = get_env_or_default('USER_VERIFICATION_API_URL', '')
+        self.user_verification_api_timeout = int(get_env_or_default('USER_VERIFICATION_API_TIMEOUT', '30'))
+        self.user_verification_api_token = get_env_or_default('USER_VERIFICATION_API_TOKEN', '')
+        
         # SSE相关配置
         self.sse_batch_interval = float(get_env_or_default('SSE_BATCH_INTERVAL', '0.3'))
         self.sse_max_batch_size = int(get_env_or_default('SSE_MAX_BATCH_SIZE', '8'))

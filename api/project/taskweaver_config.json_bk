@@ -1,8 +1,7 @@
 {
-    "llm.api_type": "lingyun",
-    "llm.model": "ds-32b-128k",
+    "llm.api_type": "qwen",
+    "llm.model": "qwen3-14b",
     "llm.api_key": "**",
-    "llm.api_base": "http://bigmodel.zhiduo.cmos:8080/getGptResponsePrd/queryWithTemplateStream",
     "execution_service.kernel_mode": "local",
     "code_generator.enable_auto_plugin_selection": "false",
     "code_interpreter.code_verification_on": "false",
@@ -28,5 +27,5 @@
             "top_p": 0.8
         }
     },
-    "planner.llm_alias": ""
+    "planner.llm_alias": "planner_optimized"
 }

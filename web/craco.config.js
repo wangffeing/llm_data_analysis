@@ -1,6 +1,26 @@
 const path = require('path');
 
 module.exports = {
+  babel: {
+    presets: [
+      [
+        '@babel/preset-env',
+        {
+          useBuiltIns: 'entry',
+          corejs: 3,
+          targets: {
+            chrome: '60',
+            firefox: '55',
+            safari: '12',
+            edge: '79',
+            ie: '11'
+          }
+        }
+      ],
+      '@babel/preset-react',
+      '@babel/preset-typescript'
+    ]
+  },
   webpack: {
     configure: (webpackConfig) => {
       // 1. 添加关键的模块解析规则（基于外部链接的解决方案）
@@ -35,6 +55,20 @@ module.exports = {
         ...webpackConfig.resolve.extensions
       ];
       
+      // 5. 添加对老版本浏览器的支持
+      webpackConfig.module.rules.forEach(rule => {
+        if (rule.oneOf) {
+          rule.oneOf.forEach(oneOfRule => {
+            if (oneOfRule.test && oneOfRule.test.toString().includes('js')) {
+              oneOfRule.include = [
+                oneOfRule.include,
+                /node_modules/
+              ].filter(Boolean);
+            }
+          });
+        }
+      });
+
       webpackConfig.ignoreWarnings = [
         function ignoreSourcemapsloaderWarnings(warning) {
           return (

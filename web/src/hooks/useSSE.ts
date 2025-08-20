@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
+// 添加 API 基础地址配置
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
 // 消息类型定义（对应后端SSE消息类型）
 export enum MessageType {
   ROUND_START = 'round_start',
@@ -126,7 +129,7 @@ export const useSSE = ({ sessionId, onMessage, onError, messageApi }: UseSSEProp
     isConnectingRef.current = true; // cleanup会重置这个值，需要重新设置
 
     setConnectionStatus('connecting');
-    const url = `http://localhost:8000/api/chat/stream/${currentSessionId}`;
+    const url = `${API_BASE_URL}/api/chat/stream/${currentSessionId}`;
 
     try {
       const eventSource = new EventSource(url);

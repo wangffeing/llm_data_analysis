@@ -13,11 +13,31 @@ const apiClient = axios.create({
   withCredentials: true, // 重要：允许发送 cookies
 });
 
-// 请求拦截器 - 简化，因为现在使用 cookies
+// 统一错误处理函数
+const handleAuthError = (status: number) => {
+  if (status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:expired'));
+    sessionStorage.removeItem('user_info');
+    sessionStorage.removeItem('app_code');
+    sessionStorage.removeItem('user_token');
+    throw new Error('登录已过期，请重新登录');
+  } else if (status === 403) {
+    throw new Error('权限不足，请检查用户权限');
+  }
+};
+
+// 请求拦截器 - 添加用户认证头
 apiClient.interceptors.request.use(
   (config) => {
-    // 移除 localStorage 逻辑，改为依赖 cookies
-    // Cookie 会自动包含在请求中
+    // 添加用户认证头
+    const appCode = sessionStorage.getItem('app_code');
+    const userToken = sessionStorage.getItem('user_token');
+    
+    if (appCode && userToken) {
+      config.headers['X-App-Code'] = appCode;
+      config.headers['X-Token'] = userToken;
+    }
+    
     return config;
   },
   (error) => {
@@ -34,13 +54,11 @@ apiClient.interceptors.response.use(
   (error) => {
     console.error('响应错误:', error.response?.status, error.response?.data);
     
-    if (error.response?.status === 401) {
-      // 认证过期，可以触发重新登录
-      window.dispatchEvent(new CustomEvent('auth:expired'));
-      throw new Error('登录已过期，请重新登录');
-    } else if (error.response?.status === 403) {
-      throw new Error('权限不足，请检查管理员权限');
-    } else if (error.response?.status === 404) {
+    const status = error.response?.status;
+    
+    if (status === 401 || status === 403) {
+      handleAuthError(status);
+    } else if (status === 404) {
       // 检查是否是会话相关的404错误
       const url = error.config?.url || '';
       if (url.includes('/session/') || url.includes('/chat/')) {
@@ -48,16 +66,13 @@ apiClient.interceptors.response.use(
         window.dispatchEvent(new CustomEvent('session:invalid', { 
           detail: { sessionId: url.match(/\/session\/([^\/]+)/)?.[1] }
         }));
-        throw new Error('会话已过期，请创建新会话');
-      } else {
-        throw new Error('请求的资源不存在 (404)');
+        throw new Error('会话不存在或已过期');
       }
-    } else if (error.response?.status === 500) {
-      throw new Error('服务器内部错误 (500)');
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('请求超时');
+      throw new Error('请求的资源不存在');
+    } else if (status >= 500) {
+      throw new Error('服务器内部错误，请稍后重试');
     } else {
-      throw new Error(error.response?.data?.detail || '网络或未知错误');
+      throw new Error(error.response?.data?.detail || error.message || '请求失败');
     }
   }
 );
@@ -74,7 +89,7 @@ function isAdminRequest(url: string, method: string): boolean {
   );
 }
 
-
+// 接口定义
 interface SessionResponse {
   session_id: string;
   created_at: string;
@@ -104,8 +119,6 @@ interface HeartbeatResponse {
   timestamp: string;
 }
 
-// ==================== API Service ====================
-// 添加配置相关的响应类型
 interface ConfigResponse {
   success: boolean;
   config: TaskWeaverConfig;
@@ -116,8 +129,6 @@ interface ConfigUpdateResponse {
   message: string;
 }
 
-// 更新 API 方法的返回类型
-// 添加数据源管理相关的接口
 interface DataSourceCreateRequest {
   name: string;
   table_name: string;
@@ -135,12 +146,10 @@ interface DataSourceUpdateRequest {
   table_columns_names: string[];
 }
 
-
 interface TemplatePromptResponse {
   success: boolean;
   prompt: string;
 }
-
 
 interface TemplateResponse {
   templates: Template[];
@@ -150,8 +159,6 @@ interface TemplateDetailResponse {
   success: boolean;
   template: Template;
 }
-
-
 
 interface ReportGenerationRequest {
   session_id: string;
@@ -176,12 +183,45 @@ interface ReportResponse {
   };
 }
 
+interface UserVerificationRequest {
+  app_code: string;
+  token: string;
+}
+
+interface UserVerificationResponse {
+  success: boolean;
+  message: string;
+  user_id?: string;
+  username?: string;
+  permissions?: string[];
+  expires_at?: string;
+}
+
+interface UserInfoResponse {
+  success: boolean;
+  user_id: string;
+  username: string;
+  app_code: string;
+  permissions: string[];
+  timestamp: string;
+}
+
+interface UserStatusResponse {
+  is_logged_in: boolean;
+  user_info?: {
+    user_id: string;
+    username: string;
+    app_code: string;
+    permissions: string[];
+  };
+  timestamp: string;
+}
+
 export const apiService = {
-  
   // 健康检查
   healthCheck: (): Promise<any> => apiClient.get('/health'),
   
-  // 管理员认证相关
+  // 管理员认证
   adminLogin: (adminKey: string): Promise<{success: boolean, message: string, expires_at: string}> => 
     apiClient.post('/api/system/admin/login', { admin_key: adminKey }),
   
@@ -191,36 +231,33 @@ export const apiService = {
   getAdminStatus: (): Promise<{is_logged_in: boolean, timestamp: string}> => 
     apiClient.get('/api/system/admin/status'),
   
-  // 数据源相关
+  // 数据源管理
   getDataSources: (): Promise<DataSourcesResponse> => apiClient.get('/api/data/sources'),
   getDataPreview: (sourceName: string, limit: number = 10): Promise<DataPreviewResponse> => 
     apiClient.get(`/api/data/sources/${sourceName}/preview?limit=${limit}`),
-
-  // 会话相关
+  
+  // 会话管理
   createSession: (): Promise<SessionResponse> => apiClient.post('/api/session/create'),
   getSession: (sessionId: string): Promise<any> => apiClient.get(`/api/session/${sessionId}`),
   deleteSession: (sessionId: string): Promise<MessageResponse> => apiClient.delete(`/api/session/${sessionId}`),
   sessionHeartbeat: (sessionId: string): Promise<HeartbeatResponse> => 
     apiClient.post(`/api/session/${sessionId}/heartbeat`),
   
-  // 消息相关
+  // 聊天消息
   getMessages: (sessionId: string): Promise<any> => 
     apiClient.get(`/api/chat/history/${sessionId}/messages`),
-
-  // 文件上传相关
+  
+  // 文件上传
   uploadFiles: (files: File[]): Promise<any> => {
     const formData = new FormData();
     files.forEach(file => {
       formData.append('files', file);
     });
-    
-    return axios.post(`${API_BASE_URL}/api/files/upload`, formData, {
+    return apiClient.post('/api/upload/files', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      withCredentials: true, // 包含 cookies
-      timeout: 120000,
-    }).then(response => response.data);
+    });
   },
   
   // 发送聊天消息
@@ -231,8 +268,8 @@ export const apiService = {
     template_id?: string;
   }): Promise<any> => 
     apiClient.post(`/api/chat/message/${sessionId}`, message),
-
-  // 配置相关API - 添加明确的返回类型
+  
+  // 配置管理
   getSessionConfig: (sessionId: string): Promise<ConfigResponse> => 
     apiClient.get(`/api/config/session/${sessionId}`),
   
@@ -256,8 +293,8 @@ export const apiService = {
   
   getAvailableModules: (): Promise<{success: boolean, modules: string[]}> => 
     apiClient.get('/api/config/options/modules'),
-
-  // 数据源管理相关
+  
+  // 数据源CRUD
   createDataSource: (data: DataSourceCreateRequest): Promise<{success: boolean, message: string}> => 
     apiClient.post('/api/data/sources', data),
   
@@ -267,7 +304,7 @@ export const apiService = {
   deleteDataSource: (sourceName: string): Promise<{success: boolean, message: string}> => 
     apiClient.delete(`/api/data/sources/${sourceName}`),
   
-  // 模板相关API
+  // 模板管理
   getAnalysisTemplates: (): Promise<TemplateResponse> => 
     apiClient.get('/api/templates/analysis'),
   
@@ -277,48 +314,64 @@ export const apiService = {
       data_columns: dataColumns
     }),
   
-  // 添加自定义模板
+  // 自定义模板
   addCustomTemplate: (templateId: string, templateConfig: any): Promise<{success: boolean, message: string}> => 
     apiClient.post('/api/templates/custom', {
       template_id: templateId,
       template_config: templateConfig
     }),
-
-  // 更新自定义模板
+  
   updateCustomTemplate: (templateId: string, templateConfig: any): Promise<{success: boolean, message: string}> => 
     apiClient.put(`/api/templates/custom/${templateId}`, {
       template_config: templateConfig
     }),
   
-  // 删除自定义模板
   deleteCustomTemplate: (templateId: string): Promise<{success: boolean, message: string}> => 
     apiClient.delete(`/api/templates/custom/${templateId}`),
   
-  // 获取模板详情
   getTemplateDetail: (templateId: string): Promise<TemplateDetailResponse> => 
     apiClient.get(`/api/templates/template/${templateId}`),
   
-  // 智能报告生成API
+  // 报告生成
   generateIntelligentReport: (request: ReportGenerationRequest): Promise<ReportResponse> => 
     apiClient.post('/api/reports/generate', request),
   
-  // 验证管理员密钥（向后兼容）
+  // 管理员密钥验证
   verifyAdminKey: (adminKey: string): Promise<{success: boolean, message: string}> => {
-    const tempClient = axios.create({
-      baseURL: API_BASE_URL,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Key': adminKey
-      }
-    });
-    return tempClient.post('/api/system/verify-admin-key');
-  }, // 这里需要逗号
-
-  // 插件相关API - 新增
+    return apiClient.post('/api/system/verify-admin', { admin_key: adminKey })
+      .then(response => {
+        // 修复：访问 response.data 而不是直接访问 response
+        if (response.data.success) {
+          return { success: true, message: '管理员密钥验证成功' };
+        } else {
+          return { success: false, message: response.data.message || '验证失败' };
+        }
+      })
+      .catch(error => {
+        return { success: false, message: error.message || '验证请求失败' };
+      });
+  }, // 修复：添加逗号
+  
+  // 插件管理
   updateSessionPlugins: (sessionId: string, plugins: string[]): Promise<ConfigUpdateResponse> => 
     apiClient.put(`/api/config/session/${sessionId}/plugins`, { plugins }),
 
   getAvailablePlugins: (): Promise<{success: boolean, plugins: string[]}> => 
     apiClient.get('/api/config/options/plugins'),
+  
+  // 用户验证相关
+  verifyUser: (appCode: string, token: string): Promise<UserVerificationResponse> => 
+    apiClient.post('/api/system/verify-user', { app_code: appCode, token }),
+
+  getUserInfo: (): Promise<UserInfoResponse> => 
+    apiClient.get('/api/system/user-info'),
+
+  getUserStatus: (): Promise<UserStatusResponse> => 
+    apiClient.get('/api/system/user-status'),
+
+  userLogout: (): Promise<{success: boolean, message: string}> => 
+    apiClient.post('/api/system/user/logout'),
+
+  getSystemStatus: (): Promise<{user_verification_enabled: boolean}> => 
+    apiClient.get('/api/system/status'),
 };

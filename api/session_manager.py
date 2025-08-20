@@ -75,9 +75,26 @@ class SessionManager:
         self._start_cleanup_timer()
         
         # 默认配置模板
+        # self.default_config = {
+        #     "llm.api_type": "qwen",
+        #     "llm.model": "qwen3-14b",
+        #     "execution_service.kernel_mode": "local",
+        #     "code_generator.enable_auto_plugin_selection": "false",
+        #     "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置
+        #     "code_interpreter.code_verification_on": "false",
+        #     "code_interpreter.allowed_modules": ["pandas", "matplotlib", "numpy", "sklearn", "scipy", "seaborn", "datetime", "typing", "json"],
+        #     "logging.log_file": "taskweaver.log",
+        #     "logging.log_folder": "logs",
+        #     "logging.log_level": "WARNING",
+        #     "planner.prompt_compression": "true",
+        #     "code_generator.prompt_compression": "true",
+        #     "session.max_internal_chat_round_num": 20,
+        #     "session.roles": ["planner", "code_interpreter", "recepta"]
+        # }
         self.default_config = {
-            "llm.api_type": "qwen",
-            "llm.model": "qwen3-14b",
+            "llm.api_type": "lingyun",
+            "llm.model": "qwen2.5-32b",
+            "llm.api_base": "http://bigmodel.zhiduo.cmos:8080/getGptResponsePrd/queryWithTemplateStream",
             "execution_service.kernel_mode": "local",
             "code_generator.enable_auto_plugin_selection": "false",
             "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置

@@ -43,10 +43,11 @@ class ConfigDatabaseService:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
+            # 修改：移除 GROUP_CONCAT 中的 ORDER BY
             cursor.execute('''
                 SELECT ds.*, 
-                       GROUP_CONCAT(dsc.column_name ORDER BY dsc.column_order) as columns,
-                       GROUP_CONCAT(dsc.column_display_name ORDER BY dsc.column_order) as column_names
+                       GROUP_CONCAT(dsc.column_name) as columns,
+                       GROUP_CONCAT(dsc.column_display_name) as column_names
                 FROM data_sources ds
                 LEFT JOIN data_source_columns dsc ON ds.id = dsc.source_id
                 GROUP BY ds.id
@@ -55,8 +56,17 @@ class ConfigDatabaseService:
             
             sources = {}
             for row in cursor.fetchall():
-                table_columns = row['columns'].split(',') if row['columns'] else []
-                table_columns_names = row['column_names'].split(',') if row['column_names'] else []
+                # 获取列信息并手动排序
+                cursor.execute('''
+                    SELECT column_name, column_display_name 
+                    FROM data_source_columns 
+                    WHERE source_id = ? 
+                    ORDER BY column_order
+                ''', (row['id'],))
+                
+                columns_data = cursor.fetchall()
+                table_columns = [col['column_name'] for col in columns_data]
+                table_columns_names = [col['column_display_name'] for col in columns_data]
                 
                 sources[row['source_key']] = {
                     'table_name': row['table_name'],
@@ -64,7 +74,7 @@ class ConfigDatabaseService:
                     'table_order': row['table_order'],
                     'table_columns': table_columns,
                     'table_columns_names': table_columns_names,
-                    'database_type': self._safe_get(row, 'database_type', 'unknown')  # 修复兼容性问题
+                    'database_type': self._safe_get(row, 'database_type', 'unknown')
                 }
             
             return sources

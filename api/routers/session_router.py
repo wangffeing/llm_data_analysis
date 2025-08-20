@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/create", response_model=SessionResponse)
-@rate_limit("5/minute")  # 每分钟最多5次会话创建
+@rate_limit("10/minute")  # 每分钟最多5次会话创建
 async def create_session(
     request: Request,
     session_manager: SessionManager = Depends(get_session_manager),

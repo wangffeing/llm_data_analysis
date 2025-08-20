@@ -4,7 +4,7 @@ import { useSSE, MessageType, type SSEMessage } from './useSSE';
 import { apiService } from '../services/apiService';
 // 移除message导入
 // import { message } from 'antd';
-import type { ThoughtStep, FileAttachment, ChatMessage } from '../types/appTypes';
+import type { ThoughtStep, ChatMessage } from '../types/appTypes';
 
 // 修改配置类型
 export type DescriptionUpdateMode = 'replace' | 'keep';

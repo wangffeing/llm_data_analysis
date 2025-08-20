@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import './App.css';
 import { Spin, App as AntdApp } from 'antd';
 import ChatSider from './components/ChatSider';
@@ -8,6 +8,7 @@ import ChatSender from './components/ChatSender';
 import TemplateSelector from './components/TemplateSelector';
 import ReportViewer from './components/ReportViewer';
 import ErrorBoundary from './components/ErrorBoundary';
+import UserVerification from './components/UserVerification';
 import { useAppStyles } from './styles/appStyles';
 import { useAppState } from './hooks/useAppState';
 import { useXChat, DescriptionUpdateMode } from './hooks/useXChat';
@@ -22,7 +23,13 @@ function AppContent() {
   const { styles } = useAppStyles();
   const abortController = useRef<AbortController>(null);
   
-  const [descriptionMode, setDescriptionMode] = useState<DescriptionUpdateMode>('replace');
+  // 用户验证状态
+  const [isUserVerified, setIsUserVerified] = useState(false);
+  const [userInfo, setUserInfo] = useState<any>(null);
+  const [checkingUserStatus, setCheckingUserStatus] = useState(true);
+  const [userVerificationEnabled, setUserVerificationEnabled] = useState(true);
+  
+  const [descriptionMode, setDescriptionMode] = useState<DescriptionUpdateMode>('keep');
   
   // 新增：模板和报告相关状态
   const [templateSelectorVisible, setTemplateSelectorVisible] = useState(false);
@@ -30,6 +37,152 @@ function AppContent() {
   const [currentAnalysisResults, setCurrentAnalysisResults] = useState<any>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined);
   const [gptVisTestVisible, setGptVisTestVisible] = useState(false);
+
+  // 检查用户验证是否启用和用户登录状态
+  useEffect(() => {
+    const checkUserStatus = async () => {
+      // 检查URL参数
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlAppCode = urlParams.get('appCode');
+      const urlToken = urlParams.get('token');
+      
+      if (urlAppCode && urlToken) {
+        // 自动验证URL参数
+        try {
+          const response = await apiService.verifyUser(
+            urlAppCode.replace(/"/g, ''), // 移除引号
+            urlToken.replace(/"/g, '')
+          );
+          
+          if (response.success) {
+            // 保存用户信息并设置验证状态
+            const userInfo = {
+              user_id: response.user_id,
+              username: response.username,
+              app_code: urlAppCode.replace(/"/g, ''),
+              permissions: response.permissions || []
+            };
+            
+            sessionStorage.setItem('user_info', JSON.stringify(userInfo));
+            sessionStorage.setItem('app_code', urlAppCode.replace(/"/g, ''));
+            sessionStorage.setItem('user_token', urlToken.replace(/"/g, ''));
+            
+            setUserInfo(userInfo);
+            setIsUserVerified(true);
+            setCheckingUserStatus(false); // 添加这行，设置检查状态为false
+            
+            // 清除URL参数并刷新页面状态
+            const newUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+            
+            return;
+          }
+        } catch (error) {
+          console.error('URL参数验证失败:', error);
+        }
+      }
+      
+      try {
+        // 首先检查后端是否启用了用户验证
+        const systemStatus = await apiService.getSystemStatus();
+        const verificationEnabled = systemStatus.user_verification_enabled;
+        setUserVerificationEnabled(verificationEnabled);
+        
+        if (!verificationEnabled) {
+          // 如果未启用用户验证，直接设置为已验证状态
+          setIsUserVerified(true);
+          setUserInfo({
+            user_id: 'default_user',
+            username: '默认用户',
+            app_code: 'default',
+            permissions: ['data_analysis', 'report_generation']
+          });
+          return;
+        }
+        
+        // 如果启用了用户验证，检查sessionStorage中是否有用户信息
+        const storedUserInfo = sessionStorage.getItem('user_info');
+        const appCode = sessionStorage.getItem('app_code');
+        const userToken = sessionStorage.getItem('user_token');
+        
+        if (storedUserInfo && appCode && userToken) {
+          // 验证会话是否仍然有效
+          const status = await apiService.getUserStatus();
+          if (status.is_logged_in && status.user_info) {
+            setUserInfo(status.user_info);
+            setIsUserVerified(true);
+          } else {
+            // 清除无效的用户信息
+            sessionStorage.removeItem('user_info');
+            sessionStorage.removeItem('app_code');
+            sessionStorage.removeItem('user_token');
+          }
+        }
+      } catch (error) {
+        console.log('用户状态检查失败');
+        if (userVerificationEnabled) {
+          // 如果启用了验证但检查失败，清除可能无效的用户信息
+          sessionStorage.removeItem('user_info');
+          sessionStorage.removeItem('app_code');
+          sessionStorage.removeItem('user_token');
+        } else {
+          // 如果未启用验证，设置默认状态
+          setIsUserVerified(true);
+          setUserInfo({
+            user_id: 'default_user',
+            username: '默认用户',
+            app_code: 'default',
+            permissions: ['data_analysis', 'report_generation']
+          });
+        }
+      } finally {
+        setCheckingUserStatus(false);
+      }
+    };
+
+    checkUserStatus();
+  }, [userVerificationEnabled]);
+
+  // 监听认证过期事件
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setIsUserVerified(false);
+      setUserInfo(null);
+      message.warning('登录已过期，请重新验证');
+    };
+
+    window.addEventListener('auth:expired', handleAuthExpired);
+    return () => window.removeEventListener('auth:expired', handleAuthExpired);
+  }, [message]);
+
+  // 用户验证成功处理
+  const handleUserVerified = useCallback((userData: any) => {
+    setUserInfo(userData);
+    setIsUserVerified(true);
+    message.success(`欢迎，${userData.username}！`);
+  }, [message]);
+
+  // 用户登出处理
+  const handleUserLogout = useCallback(async () => {
+    try {
+      await apiService.userLogout();
+      setIsUserVerified(false);
+      setUserInfo(null);
+      sessionStorage.removeItem('user_info');
+      sessionStorage.removeItem('app_code');
+      sessionStorage.removeItem('user_token');
+      message.success('已成功登出');
+    } catch (error) {
+      console.error('登出失败:', error);
+      // 即使登出失败，也清除本地状态
+      setIsUserVerified(false);
+      setUserInfo(null);
+      sessionStorage.removeItem('user_info');
+      sessionStorage.removeItem('app_code');
+      sessionStorage.removeItem('user_token');
+      message.warning('登出请求失败，但已清除本地登录状态');
+    }
+  }, [message]);
 
   // 使用简化的状态管理，传递messageApi
   const {
@@ -197,6 +350,39 @@ function AppContent() {
     setGptVisTestVisible(true);
   }, []);
 
+  // 如果正在检查用户状态，显示加载界面
+  if (checkingUserStatus) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        background: '#f0f2f5'
+      }}>
+        <Spin size="large" />
+        <div style={{ marginTop: '20px', fontSize: '16px', color: '#555' }}>
+          正在检查用户状态...
+        </div>
+      </div>
+    );
+  }
+
+  // 如果启用了用户验证但用户未验证，显示验证组件
+  if (userVerificationEnabled && !isUserVerified) {
+    return (
+      <UserVerification
+        visible={true}
+        onVerificationSuccess={handleUserVerified}
+        onCancel={() => {
+          // 用户取消验证时的处理逻辑
+          message.warning('需要验证身份才能使用系统');
+        }}
+      />
+    );
+  }
+
   // Loading状态
   if (loading && !currentSession) {
     return (
@@ -219,12 +405,43 @@ function AppContent() {
   return (
     <ErrorBoundary onError={handleAppError}>
       <div className={styles.layout}>
-        {/* 添加全局连接状态显示 */}
-        <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000 }}>
-            <ConnectionStatus 
-                connectionStatus={connectionStatus}
-                isConnected={isConnected}
-            />
+        {/* 添加全局连接状态显示和用户信息 */}
+        <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 1000, display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {/* 用户信息显示 */}
+          {userInfo && (
+            <div style={{ 
+              background: 'rgba(255, 255, 255, 0.9)', 
+              padding: '8px 12px', 
+              borderRadius: '6px',
+              fontSize: '12px',
+              color: '#666',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>用户: {userInfo.username}</span>
+              <span>|</span>
+              <span>应用: {userInfo.app_code}</span>
+              <button 
+                onClick={handleUserLogout}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#1890ff',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  padding: '0',
+                  textDecoration: 'underline'
+                }}
+              >
+                登出
+              </button>
+            </div>
+          )}
+          <ConnectionStatus 
+            connectionStatus={connectionStatus}
+            isConnected={isConnected}
+          />
         </div>
         <ErrorBoundary 
           onError={handleAppError}
@@ -248,7 +465,7 @@ function AppContent() {
             onDataSourcesChange={refreshDataSources}
             onOpenTemplateSelector={handleOpenTemplateSelector}
             onOpenGPTVisTest={handleOpenGPTVisTest}
-            messages={messages} // 新增：传递messages用于显示文件信息和分析指南
+            attachedFiles={attachedFiles}
           />
         </ErrorBoundary>
         

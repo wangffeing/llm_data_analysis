@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Button, Switch, Tooltip } from 'antd';
 import { DatabaseOutlined, PlusOutlined, SettingOutlined, SyncOutlined, SaveOutlined, KeyOutlined } from '@ant-design/icons';
 import DataSourceModal from './DataSourceModal';
@@ -23,10 +23,10 @@ interface ChatSiderProps {
   onDataSourceSelect: (dataSource: any) => void;
   onSubmit?: (value: string) => void;
   currentSession: string | null;
-  onDataSourcesChange?: () => void; // 新增
-  onOpenTemplateSelector?: () => void;  // 新增
-  onOpenGPTVisTest: () => void; // 新增
-  messages?: any[]; // 新增
+  onDataSourcesChange?: () => void;
+  onOpenTemplateSelector?: () => void;
+  onOpenGPTVisTest: () => void;
+  attachedFiles?: any[]; // 新增：当前附加的文件
 }
 
 const ChatSider: React.FC<ChatSiderProps> = ({
@@ -40,10 +40,10 @@ const ChatSider: React.FC<ChatSiderProps> = ({
   onDataSourceSelect,
   onSubmit,
   currentSession,
-  onDataSourcesChange, // 新增
+  onDataSourcesChange,
   onOpenTemplateSelector,
-  onOpenGPTVisTest, // 新增
-  messages = [], // 新增：添加messages参数并设置默认值
+  onOpenGPTVisTest,
+  attachedFiles = [], // 新增：添加attachedFiles参数并设置默认值
 }) => {
   const [dataSourceModalVisible, setDataSourceModalVisible] = useState(false);
   const [configModalVisible, setConfigModalVisible] = useState(false);
@@ -51,31 +51,19 @@ const ChatSider: React.FC<ChatSiderProps> = ({
   const [guideVisible, setGuideVisible] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false); // 新增帮助页面状态
 
-  // 获取上传的文件信息
-  const uploadedFiles = useMemo(() => {
-    const files: any[] = [];
-    messages.forEach((msg: any) => {
-      if (msg.files && msg.files.length > 0) {
-        files.push(...msg.files);
-      }
-    });
-    return files;
-  }, [messages]);
-
+  // 直接删除 uploadedFiles 的 useMemo 计算
   // 判断是否有数据源（数据库或文件）
-  const hasDataSource = selectedDataSource || uploadedFiles.length > 0;
-  const dataSourceType = selectedDataSource ? 'database' : uploadedFiles.length > 0 ? 'file' : 'none';
+  const hasDataSource = selectedDataSource || attachedFiles.length > 0;
+  const dataSourceType = selectedDataSource ? 'database' : attachedFiles.length > 0 ? 'file' : 'none';
 
   // 处理分析指南点击
   const handleGuideClick = (guide: any) => {
     if (onSubmit && hasDataSource) {
       let prompt;
       if (selectedDataSource) {
-        // 针对数据库数据源
         prompt = `请对 ${selectedDataSource.name} 数据集进行${guide.label}：${guide.description}`;
-      } else if (uploadedFiles.length > 0) {
-        // 针对上传的文件
-        const fileNames = uploadedFiles.map((f: any) => f.name).join('、');
+      } else if (attachedFiles.length > 0) {
+        const fileNames = attachedFiles.map((f: any) => f.name).join('、');
         prompt = `请对已上传的文件（${fileNames}）进行${guide.label}：${guide.description}`;
       }
       if (prompt) {
@@ -113,15 +101,31 @@ const ChatSider: React.FC<ChatSiderProps> = ({
       </Button>
 
       {/* 占位符区域 - 根据是否选择数据源显示不同内容 */}
-      <div style={{ flex: 1, minHeight: '200px' }}>
+      <div style={{ 
+        flex: 1, 
+        minHeight: '200px',
+        maxHeight: 'calc(100vh - 400px)', // 新增：限制最大高度，为底部按钮预留空间
+        overflow: 'hidden', // 新增：隐藏溢出
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
         {hasDataSource ? (
           // 显示分析指南
-          <div style={{ padding: '12px' }}>
+          <div style={{ 
+            padding: '12px',
+            flex: 1,
+            overflow: 'auto' // 新增：允许滚动
+          }}>
             <div style={{ 
               marginBottom: '12px', 
               fontSize: '14px', 
               fontWeight: 'bold',
-              color: dataSourceType === 'database' ? '#1677ff' : '#52c41a'
+              color: dataSourceType === 'database' ? '#1677ff' : '#52c41a',
+              position: 'sticky', // 新增：标题固定在顶部
+              top: 0,
+              backgroundColor: '#fff',
+              zIndex: 1,
+              paddingBottom: '8px'
             }}>
               {DESIGN_GUIDE.label}
               {dataSourceType === 'file' && (
@@ -136,7 +140,7 @@ const ChatSider: React.FC<ChatSiderProps> = ({
                   key={guide.key}
                   onClick={() => handleGuideClick(guide)}
                   style={{
-                    padding: '12px',
+                    padding: '10px', // 减少内边距
                     border: '1px solid #f0f0f0',
                     borderRadius: '6px',
                     cursor: 'pointer',
@@ -158,12 +162,12 @@ const ChatSider: React.FC<ChatSiderProps> = ({
                   <div style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    gap: '8px',
-                    marginBottom: '4px'
+                    gap: '6px', // 减少间距
+                    marginBottom: '3px' // 减少底部间距
                   }}>
                     {guide.icon}
                     <span style={{ 
-                      fontSize: '14px', 
+                      fontSize: '13px', // 稍微减小字体
                       fontWeight: '500',
                       color: '#333'
                     }}>
@@ -171,10 +175,10 @@ const ChatSider: React.FC<ChatSiderProps> = ({
                     </span>
                   </div>
                   <div style={{ 
-                    fontSize: '12px', 
+                    fontSize: '11px', // 减小描述字体
                     color: '#666',
-                    lineHeight: '1.4',
-                    paddingLeft: '24px'
+                    lineHeight: '1.3', // 减小行高
+                    paddingLeft: '20px' // 减少左边距
                   }}>
                     {guide.description}
                   </div>
@@ -196,7 +200,12 @@ const ChatSider: React.FC<ChatSiderProps> = ({
       </div>
 
       {/* 思维链模式设置 - 移到底部 */}
-      <div style={{ marginBottom: '16px', borderBottom: '1px solid #f0f0f0', paddingBottom: '16px' }}>
+      <div style={{ 
+        marginBottom: '16px', 
+        borderBottom: '1px solid #f0f0f0', 
+        paddingBottom: '16px',
+        flexShrink: 0 // 新增：防止被压缩
+      }}>
         <div style={{ padding: '0 12px', marginBottom: '8px', fontSize: '12px', color: '#999' }}>
           思维链模式
         </div>

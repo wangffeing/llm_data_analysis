@@ -23,6 +23,7 @@ from taskweaver.llm.sentence_transformer import SentenceTransformerService
 from taskweaver.llm.util import ChatMessageType, format_chat_message
 from taskweaver.llm.zhipuai import ZhipuAIService
 from taskweaver.llm.anthropic import AnthropicService
+from taskweaver.llm.lingyun import LingyunService
 
 llm_completion_config_map = {
     "openai": OpenAIService,
@@ -35,6 +36,7 @@ llm_completion_config_map = {
     "zhipuai": ZhipuAIService,
     "groq": GroqService,
     "anthropic": AnthropicService,
+    "lingyun": LingyunService,  # 添加这一行
 }
 
 # TODO
@@ -70,6 +72,8 @@ class LLMApi(object):
             self._set_completion_service(GroqService)
         elif self.config.api_type == "anthropic":  # Add support for Anthropic
             self._set_completion_service(AnthropicService)
+        elif self.config.api_type == "lingyun":  # Add support for Lingyun
+            self._set_completion_service(LingyunService)
         else:
             raise ValueError(f"API type {self.config.api_type} is not supported")
 
@@ -92,6 +96,10 @@ class LLMApi(object):
         elif self.config.embedding_api_type == "groq":
             self.embedding_service = PlaceholderEmbeddingService(
                 "Groq does not support embeddings yet. Please configure a different embedding API.",
+            )
+        elif self.config.embedding_api_type == "lingyun":
+            self.embedding_service = PlaceholderEmbeddingService(
+                "Lingyun embeddings not implemented yet. Please configure a different embedding API.",
             )
         else:
             raise ValueError(

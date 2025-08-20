@@ -172,6 +172,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
           
           <Form.Item label="API类型" name="llm.api_type">
             <Select placeholder="选择API类型">
+              <Option value="lingyun">LingYun</Option>
               <Option value="qwen">Qwen</Option>
             </Select>
           </Form.Item>

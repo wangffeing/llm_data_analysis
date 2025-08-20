@@ -1,17 +1,25 @@
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import timedelta
+from typing import Dict, Any
 from dependencies import get_sse_service
 from services.sse_service import SSEService
+from services.user_service import get_user_service
 from auth import (
     verify_admin_permission, 
     verify_admin_permission_cookie,
     verify_admin_permission_optional_cookie,
-    generate_admin_token
+    generate_admin_token,
+    verify_user_credentials,
+    verify_user_credentials_optional,
+    generate_user_session_token,
+    verify_user_session,
+    require_user_session
 )
-from config import Config
+from config import Config, get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,6 +31,18 @@ class AdminLoginResponse(BaseModel):
     success: bool
     message: str
     expires_at: str
+
+class UserVerificationRequest(BaseModel):
+    app_code: str
+    token: str
+
+class UserVerificationResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: str = ""
+    username: str = ""
+    permissions: list = []
+    expires_at: str = ""
 
 @router.get("/health")
 async def health_check(sse_service: SSEService = Depends(get_sse_service)):
@@ -110,5 +130,83 @@ async def admin_status(request: Request):
     
     return {
         "is_logged_in": is_admin,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@router.post("/verify-user", response_model=UserVerificationResponse)
+async def verify_user_endpoint(request: UserVerificationRequest):
+    try:
+        user_service = get_user_service()
+        user_info = await user_service.verify_user(request.app_code, request.token)
+        
+        if user_info:
+            # 生成用户会话令牌
+            session_token = generate_user_session_token(user_info)
+            
+            # 创建响应
+            response = JSONResponse(content={
+                "success": True,
+                "message": "用户验证成功",
+                "user_id": user_info.get('user_id'),
+                "username": user_info.get('username'),
+                "permissions": user_info.get('permissions', []),
+                "department_name": user_info.get('department_name'),
+                "team_name": user_info.get('team_name'),
+                "role": user_info.get('role'),
+                "expires_at": user_info.get('expires_at')
+            })
+            
+            # 设置用户会话Cookie
+            response.set_cookie(
+                key="user_session",
+                value=session_token,
+                max_age=86400,  # 24小时
+                httponly=True,
+                secure=False,  # 开发环境设为False
+                samesite="lax"
+            )
+            
+            return response
+        else:
+            raise HTTPException(status_code=401, detail="用户验证失败")
+            
+    except Exception as e:
+        logger.error(f"用户验证错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@router.get("/user-status")
+async def get_user_status(request: Request):
+    """检查用户登录状态"""
+    # 修复：移除 await，因为 verify_user_session 不是异步函数
+    user_info = verify_user_session(request)
+    
+    return {
+        "is_logged_in": user_info is not None,
+        "user_info": user_info if user_info else None,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@router.post("/user/logout")
+async def user_logout(response: Response):
+    """用户登出"""
+    # 修复：统一Cookie名称为 user_session
+    response.delete_cookie(
+        key="user_session",
+        httponly=True,
+        secure=True,
+        samesite="lax"
+    )
+    
+    logger.info("用户登出成功")
+    
+    return {"success": True, "message": "登出成功"}
+
+@router.get("/status")
+async def get_system_status():
+    """获取系统状态"""
+    config = get_config()
+    return {
+        "user_verification_enabled": config.enable_user_verification,
+        "auth_enabled": config.enable_auth,
         "timestamp": datetime.now().isoformat()
     }
