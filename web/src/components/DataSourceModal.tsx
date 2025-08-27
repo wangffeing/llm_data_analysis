@@ -9,19 +9,11 @@ import {
 } from '@ant-design/icons';
 import { createStyles } from 'antd-style';
 import { apiService } from '../services/apiService';
+import { DataSource } from '../types/appTypes';
 
 const { Text } = Typography;
 const { TextArea } = Input;
 
-interface DataSource {
-  name: string;
-  description?: string;
-  type?: string;
-  table_name?: string;
-  table_columns?: string[];
-  table_columns_names?: string[];
-  table_order?: string;
-}
 
 interface DataSourceModalProps {
   visible: boolean;
@@ -138,9 +130,10 @@ const DataSourceModal: React.FC<DataSourceModalProps> = ({
       await apiService.deleteDataSource(name);
       message.success('数据源删除成功');
       await refreshDataSources(); // 调用刷新
-    } catch (error) {
+    } catch (error: any) {
       console.error('删除数据源失败:', error);
-      message.error('删除数据源失败');
+      const errorMessage = error?.message || error?.toString() || '未知错误';
+      message.error(`删除数据源失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

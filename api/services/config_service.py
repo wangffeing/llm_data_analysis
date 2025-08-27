@@ -146,6 +146,37 @@ class ConfigService:
             "DeepSeek-R1-Distill-Qwen-32B"
         ]
     
+    def get_available_models_by_api_type(self, api_type: str) -> List[str]:
+        """根据API类型获取可用的模型列表"""
+        models_map = {
+            "lingyun": [
+                "ds-32b-128k",
+                "qwen2.5-32b", 
+                "qwq-32b-128k",
+                "DeepSeek-R1-Distill-Qwen-32B"
+            ],
+            "local": [
+                "Qwen3-8B",
+            ],
+            "qwen": [
+                "qwen3-14b",
+                "qwen3-32b", 
+                "qwen3-8b",
+                "qwen3-30b-a3b",
+                "qwen-turbo-2025-07-15",
+                "qwen-plus-2025-07-14",
+                "qwen3-30b-a3b-instruct-2507",
+                "qwen3-30b-a3b-thinking-2507",
+                "qwen3-235b-a22b-thinking-2507",
+                "qwen3-235b-a22b-instruct-2507",
+                "qwen3-coder-plus-2025-07-22",
+                "qwen3-coder-480b-a35b-instruct",
+                "qwen3-coder-flash-2025-07-28"
+            ]
+        }
+        
+        return models_map.get(api_type, [])
+    
     def get_available_modules(self) -> List[str]:
         """获取可用的Python模块列表"""
         return [

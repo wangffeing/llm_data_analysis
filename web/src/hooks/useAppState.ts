@@ -79,11 +79,13 @@ export const useAppState = (messageApi?: any) => {
       setupHeartbeatInterval(response.session_id);
       setSelectedDataSource(null);
       setDataPreview(null);
-      setFilePreview(null); // 新增：重置文件预览
-      setAttachedFiles([]); // 新增：重置附件列表
+      setFilePreview(null);
+      setAttachedFiles([]);
       messageApi?.success('新会话已创建');
-    } catch (error) {
-      messageApi?.error('创建新会话失败');
+    } catch (error: any) {
+      // 修复：将错误信息合并到消息中
+      const errorMessage = error?.message || error?.toString() || '未知错误';
+      messageApi?.error(`创建新会话失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -109,8 +111,10 @@ export const useAppState = (messageApi?: any) => {
       try {
         const preview = await apiService.getDataPreview(dataSource.name, 10);
         setDataPreview(preview);
-      } catch (error) {
-        messageApi?.error('获取数据预览失败');
+      } catch (error: any) {
+        // 修复：添加错误详细信息
+        const errorMessage = error?.message || error?.toString() || '未知错误';
+        messageApi?.error(`获取数据预览失败: ${errorMessage}`);
         setDataPreview(null);
       } finally {
         setPreviewLoading(false);
@@ -125,8 +129,10 @@ export const useAppState = (messageApi?: any) => {
       const dataSourcesResponse = await apiService.getDataSources();
       const formattedDataSources = dataSourcesResponse.data_sources.map((ds: any) => ({ ...ds }));
       setDataSources(formattedDataSources);
-    } catch (error) {
-      messageApi?.error('刷新数据源失败');
+    } catch (error: any) {
+      // 修复：添加错误详细信息
+      const errorMessage = error?.message || error?.toString() || '未知错误';
+      messageApi?.error(`刷新数据源失败: ${errorMessage}`);
     }
   }, [messageApi]);
 
@@ -140,8 +146,10 @@ export const useAppState = (messageApi?: any) => {
         const sessionResponse = await apiService.createSession();
         setCurrentSession(sessionResponse.session_id);
         setupHeartbeatInterval(sessionResponse.session_id);
-      } catch (error) {
-        messageApi?.error('应用初始化失败');
+      } catch (error: any) {
+        // 修复：添加错误详细信息
+        const errorMessage = error?.message || error?.toString() || '未知错误';
+        messageApi?.error(`应用初始化失败: ${errorMessage}`);
       } finally {
         setLoading(false);
       }

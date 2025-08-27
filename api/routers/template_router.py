@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from services.simple_template_service import SimpleTemplateService
 from pydantic import BaseModel
-from auth import verify_admin_permission, verify_admin_permission_cookie  # 添加权限验证导入
+from auth import verify_admin_permission_cookie
 
 router = APIRouter()
 

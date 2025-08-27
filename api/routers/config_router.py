@@ -179,6 +179,16 @@ async def get_available_models(config_service: ConfigService = Depends(get_confi
         logger.error(f"获取可用模型失败: {e}")
         raise HTTPException(status_code=500, detail="获取可用模型失败")
 
+@router.get("/options/models/{api_type}")
+async def get_available_models_by_api_type(api_type: str, config_service: ConfigService = Depends(get_config_service)):
+    """根据API类型获取可用的模型列表"""
+    try:
+        models = config_service.get_available_models_by_api_type(api_type)
+        return {"success": True, "models": models}
+    except Exception as e:
+        logger.error(f"获取{api_type}可用模型失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取{api_type}可用模型失败")
+
 @router.get("/options/roles")
 async def get_available_roles(config_service: ConfigService = Depends(get_config_service)):
     """获取可用的角色列表"""

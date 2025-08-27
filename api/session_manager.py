@@ -94,7 +94,6 @@ class SessionManager:
         self.default_config = {
             "llm.api_type": "lingyun",
             "llm.model": "qwen2.5-32b",
-            "llm.api_base": "http://bigmodel.zhiduo.cmos:8080/getGptResponsePrd/queryWithTemplateStream",
             "execution_service.kernel_mode": "local",
             "code_generator.enable_auto_plugin_selection": "false",
             "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置

@@ -83,7 +83,6 @@ class UserService:
                                 'department_id': user_object.get('departmentId'),
                                 'team_id': user_object.get('teamId'),
                                 'permissions': get_permissions_from_role(user_object.get('role', '')),
-
                                 'expires_at': None  # API未提供过期时间
                             }
                         else:

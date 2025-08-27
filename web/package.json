@@ -22,6 +22,7 @@
     "core-js": "^3.45.0",
     "dayjs": "^1.11.10",
     "dompurify": "^3.2.6",
+    "ml-matrix": "^6.12.1",
     "papaparse": "^5.5.3",
     "prismjs": "^1.30.0",
     "react": "^19.1.0",
@@ -49,16 +50,10 @@
   },
   "browserslist": {
     "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all",
-      "ie >= 11",
-      "chrome >= 60"
+      "chrome >= 83"
     ],
     "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
+      "chrome >= 83"
     ]
   },
   "devDependencies": {

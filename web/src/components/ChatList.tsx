@@ -72,9 +72,14 @@ interface ChatListProps {
   onSubmit: (val: string) => void;
   dataPreview?: any;
   filePreview?: any;
-  onGenerateReport?: (analysisResults: any) => void;  // 新增
+  onGenerateReport?: (analysisResults: any) => void;
+  // 新增：添加缺失的回调函数
+  onOpenDataSourceModal?: () => void;
+  onOpenFileUpload?: () => void;
+  onOpenDataSourceManagement?: () => void;
+  onOpenTemplateSelector?: () => void;
+  onShowAnalysisGuide?: () => void;
 }
-
 
 const ChatList: React.FC<ChatListProps> = React.memo(({
   messages,
@@ -88,6 +93,12 @@ const ChatList: React.FC<ChatListProps> = React.memo(({
   dataPreview,
   filePreview,
   onGenerateReport,
+  // 新增：添加缺失的回调函数参数
+  onOpenDataSourceModal,
+  onOpenFileUpload,
+  onOpenDataSourceManagement,
+  onOpenTemplateSelector,
+  onShowAnalysisGuide,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -671,7 +682,45 @@ const ChatList: React.FC<ChatListProps> = React.memo(({
     
     return bubbleItems;
   }, [renderedMessages, renderedThoughtChain, isLoading, messages, styles?.loadingMessage]);
-  const handleTopicClick = useCallback((info: any) => { onSubmit(info.data.description as string); }, [onSubmit]);
+  const handleTopicClick = useCallback((info: any) => {
+    const action = info.data.action;
+    
+    switch (action) {
+      case 'select_datasource':
+        // 触发数据源选择模态框
+        if (onOpenDataSourceModal) {
+          onOpenDataSourceModal();
+        }
+        break;
+      case 'upload_file':
+        // 触发文件上传
+        if (onOpenFileUpload) {
+          onOpenFileUpload();
+        }
+        break;
+      case 'manage_datasource':
+        // 打开数据源管理
+        if (onOpenDataSourceManagement) {
+          onOpenDataSourceManagement();
+        }
+        break;
+      case 'select_template':
+        // 打开模板选择器
+        if (onOpenTemplateSelector) {
+          onOpenTemplateSelector();
+        }
+        break;
+      case 'show_guide':
+        // 显示分析指南
+        if (onShowAnalysisGuide) {
+          onShowAnalysisGuide();
+        }
+        break;
+      default:
+        // 兼容原有的描述文本提交
+        onSubmit(info.data.description as string);
+    }
+  }, [onSubmit, onOpenDataSourceModal, onOpenFileUpload, onOpenDataSourceManagement, onOpenTemplateSelector, onShowAnalysisGuide]);
   const handleGuideClick = useCallback((info: any) => { onSubmit(info.data.description as string); }, [onSubmit]);
 
   useEffect(() => {

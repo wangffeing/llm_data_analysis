@@ -6,69 +6,48 @@ module.exports = {
       [
         '@babel/preset-env',
         {
+          targets: {
+            chrome: '83'
+          },
           useBuiltIns: 'entry',
           corejs: 3,
-          targets: {
-            chrome: '60',
-            firefox: '55',
-            safari: '12',
-            edge: '79',
-            ie: '11'
-          }
+          modules: false,
+          loose: true
         }
       ],
-      '@babel/preset-react',
+      [
+        '@babel/preset-react',
+        {
+          runtime: 'automatic'  // Add this line
+        }
+      ],
       '@babel/preset-typescript'
+    ],
+    plugins: [
+      // 显式配置这些插件，确保 loose 模式一致
+      ["@babel/plugin-transform-class-properties", { "loose": true }],
+      ["@babel/plugin-transform-private-methods", { "loose": true }],
+      ["@babel/plugin-transform-private-property-in-object", { "loose": true }]
     ]
   },
   webpack: {
     configure: (webpackConfig) => {
-      // 1. 添加关键的模块解析规则（基于外部链接的解决方案）
+      // 只保留必要的模块解析规则
       webpackConfig.module.rules.push({
         test: /\.m?js$/,
-        resolve: {
-          fullySpecified: false
-        },
-        // 可选：完全禁用 .mjs 文件的不同行为
-        type: "javascript/auto"
-      });
-      
-      // 2. 专门处理 @antv 包的规则
-      webpackConfig.module.rules.push({
-        test: /\.m?js$/,
-        include: /node_modules\/@antv/,
         resolve: {
           fullySpecified: false
         },
         type: "javascript/auto"
       });
       
-      // 3. 强制使用 CommonJS 版本的别名
-      webpackConfig.resolve.alias = {
-        ...webpackConfig.resolve.alias,
-        '@antv/gpt-vis': path.resolve(__dirname, 'node_modules/@antv/gpt-vis/dist/cjs'),
-      };
-      
-      // 4. 确保扩展名解析正确
+      // 确保扩展名解析正确
       webpackConfig.resolve.extensions = [
         '.tsx', '.ts', '.js', '.jsx', '.mjs',
         ...webpackConfig.resolve.extensions
       ];
       
-      // 5. 添加对老版本浏览器的支持
-      webpackConfig.module.rules.forEach(rule => {
-        if (rule.oneOf) {
-          rule.oneOf.forEach(oneOfRule => {
-            if (oneOfRule.test && oneOfRule.test.toString().includes('js')) {
-              oneOfRule.include = [
-                oneOfRule.include,
-                /node_modules/
-              ].filter(Boolean);
-            }
-          });
-        }
-      });
-
+      // 忽略 source-map-loader 警告
       webpackConfig.ignoreWarnings = [
         function ignoreSourcemapsloaderWarnings(warning) {
           return (

@@ -24,6 +24,7 @@ from taskweaver.llm.util import ChatMessageType, format_chat_message
 from taskweaver.llm.zhipuai import ZhipuAIService
 from taskweaver.llm.anthropic import AnthropicService
 from taskweaver.llm.lingyun import LingyunService
+from taskweaver.llm.local import LocalService
 
 llm_completion_config_map = {
     "openai": OpenAIService,
@@ -36,7 +37,8 @@ llm_completion_config_map = {
     "zhipuai": ZhipuAIService,
     "groq": GroqService,
     "anthropic": AnthropicService,
-    "lingyun": LingyunService,  # 添加这一行
+    "lingyun": LingyunService,
+    "local": LocalService,  # 添加这一行
 }
 
 # TODO
@@ -74,6 +76,8 @@ class LLMApi(object):
             self._set_completion_service(AnthropicService)
         elif self.config.api_type == "lingyun":  # Add support for Lingyun
             self._set_completion_service(LingyunService)
+        elif self.config.api_type == "local":  # 添加这个条件
+            self._set_completion_service(LocalService)
         else:
             raise ValueError(f"API type {self.config.api_type} is not supported")
 

@@ -6,46 +6,49 @@ from typing import Optional, Dict, Any
 from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer
 from services.user_service import get_user_service
+from config import get_config  # 添加统一配置导入
 
 security = HTTPBearer(auto_error=False)
 
-# JWT配置
-JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', '24'))
+# 移除冗余的环境变量读取
+# JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')  # 删除
+# JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', '24'))  # 删除
 
 def _verify_jwt_token(token: str, secret_key: str) -> dict:
     """通用JWT令牌验证函数"""
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])
+        # 使用固定算法，简化配置
+        payload = jwt.decode(token, secret_key, algorithms=['HS256'])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="令牌已过期")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="无效的令牌")
 
-def _generate_jwt_token(payload: dict, secret_key: str, expires_hours: int = JWT_EXPIRATION_HOURS) -> str:
+def _generate_jwt_token(payload: dict, secret_key: str, expires_hours: int = 24) -> str:
     """通用JWT令牌生成函数"""
     payload['exp'] = datetime.utcnow() + timedelta(hours=expires_hours)
-    return jwt.encode(payload, secret_key, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, secret_key, algorithm='HS256')
 
 def get_admin_secret_key() -> str:
     """获取管理员密钥"""
-    admin_key = os.getenv('ADMIN_KEY')
-    if not admin_key:
+    config = get_config()
+    if not config.admin_api_key:
         raise HTTPException(status_code=500, detail="管理员密钥未配置")
-    return hashlib.sha256(admin_key.encode()).hexdigest()
+    return hashlib.sha256(config.admin_api_key.encode()).hexdigest()
 
 def get_user_secret_key() -> str:
     """获取用户密钥"""
-    user_key = os.getenv('USER_SECRET_KEY', 'default_user_secret')
+    config = get_config()
+    # 使用管理员密钥作为用户密钥的基础，确保安全性
+    user_key = f"user_{config.admin_api_key}"
     return hashlib.sha256(user_key.encode()).hexdigest()
 
 def verify_admin_key(admin_key: str) -> bool:
     """验证管理员密钥"""
-    expected_key = os.getenv('ADMIN_KEY')
-    if not expected_key:
-        return False
-    return admin_key == expected_key
+    config = get_config()
+    return admin_key == config.admin_api_key
+
 
 def generate_admin_session_token() -> str:
     """生成管理员会话令牌"""
@@ -65,43 +68,30 @@ def verify_admin_session_token(token: str) -> bool:
     except HTTPException:
         return False
 
-def verify_admin_session(request: Request) -> bool:
-    """验证管理员会话（基于Cookie）"""
-    token = request.cookies.get('admin_session')
+# 简化权限验证函数，移除冗余的多个验证函数
+def verify_admin_permission(request: Request) -> bool:
+    """统一的管理员权限验证"""
+    config = get_config()
+    
+    # 如果未启用认证，直接返回True
+    if not config.enable_auth:
+        return True
+    
+    # 检查Cookie中的会话令牌
+    token = request.cookies.get('admin_token')
     if not token:
-        return False
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    
     return verify_admin_session_token(token)
 
-def require_admin_session(request: Request) -> bool:
-    """要求管理员会话（装饰器用）"""
-    if not verify_admin_session(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
-    return True
-
-# 新增的管理员权限验证函数
-def verify_admin_permission(request: Request) -> bool:
-    """验证管理员权限（必需）"""
-    return require_admin_session(request)
-
-def verify_admin_permission_cookie(request: Request) -> bool:
-    """基于Cookie验证管理员权限（必需）"""
-    if not verify_admin_session(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
-    return True
-
-def verify_admin_permission_optional_cookie(request: Request) -> bool:
-    """基于Cookie验证管理员权限（可选，不抛出异常）"""
-    try:
-        return verify_admin_session(request)
-    except HTTPException:
-        return False
-
 def verify_admin_permission_optional(request: Request) -> bool:
-    """验证管理员权限（可选，不抛出异常）"""
+    """可选的管理员权限验证"""
     try:
-        return require_admin_session(request)
+        return verify_admin_permission(request)
     except HTTPException:
         return False
+
+
 
 def generate_admin_token(admin_key: str) -> str:
     """生成管理员令牌"""
@@ -169,48 +159,21 @@ def verify_user_session(request: Request) -> Optional[Dict[str, Any]]:
         return None
     return verify_user_session_token(token)
 
-def require_user_session(request: Request) -> Dict[str, Any]:
-    """要求用户会话（装饰器用）"""
-    user_info = verify_user_session(request)
-    if not user_info:
-        raise HTTPException(status_code=401, detail="需要用户登录")
-    return user_info
-
-def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
-    """获取当前用户信息（可选）"""
-    # 首先尝试从Cookie获取
-    user_info = verify_user_session(request)
-    if user_info:
-        return user_info
+def verify_admin_permission_cookie(request: Request) -> bool:
+    """基于Cookie的管理员权限验证"""
+    config = get_config()
+    if not config.enable_auth:
+        return True
     
-    # 然后尝试从Header获取
-    app_code = request.headers.get('X-App-Code')
-    token = request.headers.get('X-Token')
+    token = request.cookies.get('admin_token')
+    if not token:
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     
-    if app_code and token:
-        return verify_user_credentials_optional(app_code, token)
-    
-    return None
+    return verify_admin_session_token(token)
 
-def get_current_user_required(request: Request) -> Dict[str, Any]:
-    """获取当前用户信息（必需）"""
-    user_info = get_current_user_optional(request)
-    if not user_info:
-        raise HTTPException(status_code=401, detail="需要用户认证")
-    return user_info
-
-def check_user_permission(user_info: Dict[str, Any], required_permission: str) -> bool:
-    """检查用户权限"""
-    user_service = get_user_service()
-    return user_service.check_permission(user_info.get('user_id'), required_permission)
-
-def require_permission(permission: str):
-    """权限装饰器"""
-    def decorator(func):
-        def wrapper(request: Request, *args, **kwargs):
-            user_info = get_current_user_required(request)
-            if not check_user_permission(user_info, permission):
-                raise HTTPException(status_code=403, detail=f"需要权限: {permission}")
-            return func(request, *args, **kwargs)
-        return wrapper
-    return decorator
+def verify_admin_permission_optional_cookie(request: Request) -> bool:
+    """可选的基于Cookie的管理员权限验证"""
+    try:
+        return verify_admin_permission_cookie(request)
+    except HTTPException:
+        return False

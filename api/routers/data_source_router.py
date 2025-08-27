@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from services.data_source_service import DataSourceService
 from config import get_config
-from auth import verify_admin_permission, verify_admin_permission_cookie
+from auth import verify_admin_permission_cookie
 
 router = APIRouter()
 

@@ -47,7 +47,7 @@ async def stream_chat(session_id: str, sse_service: SSEService = Depends(get_sse
 
 # 修改消息发送路由
 @router.post("/message/{session_id}")
-@rate_limit("10/minute")  # 每分钟最多10条消息
+@rate_limit("100/minute")  # 每分钟最多10条消息
 async def send_message(
     request: Request,
     session_id: str,

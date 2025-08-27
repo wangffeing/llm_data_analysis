@@ -16,8 +16,8 @@ from auth import (
     verify_user_credentials,
     verify_user_credentials_optional,
     generate_user_session_token,
-    verify_user_session,
-    require_user_session
+    verify_user_session
+
 )
 from config import Config, get_config
 

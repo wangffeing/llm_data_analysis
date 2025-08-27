@@ -14,8 +14,9 @@ export const useTemplateManagement = () => {
       setLoading(true);
       const response = await apiService.getAnalysisTemplates();
       setTemplates(response.templates);
-    } catch (error) {
-      message.error('加载模板失败');
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || '未知错误';
+      message.error(`加载模板失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

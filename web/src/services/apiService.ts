@@ -285,6 +285,9 @@ export const apiService = {
   updateSessionModules: (sessionId: string, modules: string[]): Promise<ConfigUpdateResponse> => 
     apiClient.put(`/api/config/session/${sessionId}/modules`, { modules }),
 
+  getAvailableModelsByApiType: (apiType: string): Promise<{success: boolean, models: string[]}> => 
+    apiClient.get(`/api/config/options/models/${apiType}`),
+
   getAvailableModels: (): Promise<{success: boolean, models: string[]}> => 
     apiClient.get('/api/config/options/models'),
   

@@ -32,7 +32,11 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
   const [options, setOptions] = useState<ConfigOptions>({ models: [], roles: [], modules: [], plugins: [] });
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [selectedPlugins, setSelectedPlugins] = useState<string[]>([]); // 新增插件状态
+  const [selectedPlugins, setSelectedPlugins] = useState<string[]>([]);
+  // 新增：当前选择的API类型
+  const [selectedApiType, setSelectedApiType] = useState<string>('lingyun');
+  // 新增：不同API类型对应的模型列表
+  const [modelsByApiType, setModelsByApiType] = useState<{[key: string]: string[]}>({});
 
   useEffect(() => {
     if (visible) {
@@ -40,6 +44,13 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
       loadOptions();
     }
   }, [visible]);
+
+  // 新增：当API类型改变时加载对应的模型
+  useEffect(() => {
+    if (selectedApiType) {
+      loadModelsForApiType(selectedApiType);
+    }
+  }, [selectedApiType]);
 
   const loadConfig = async () => {
     try {
@@ -49,15 +60,48 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
         setConfig(response.config);
         setSelectedModules(response.config['code_interpreter.allowed_modules'] || []);
         setSelectedRoles(response.config['session.roles'] || []);
-        setSelectedPlugins(response.config['code_generator.allowed_plugins'] || []); // 新增插件初始化
+        setSelectedPlugins(response.config['code_generator.allowed_plugins'] || []);
+        // 设置当前API类型
+        const apiType = response.config['llm.api_type'] || 'lingyun';
+        setSelectedApiType(apiType);
         form.setFieldsValue(response.config);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('加载配置失败:', error);
-      message.error('加载配置失败');
+      const errorMessage = error?.message || error?.toString() || '未知错误';
+      message.error(`加载配置失败: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 新增：根据API类型加载模型列表
+  const loadModelsForApiType = async (apiType: string) => {
+    try {
+      const response = await apiService.getAvailableModelsByApiType(apiType);
+      if (response.success) {
+        setModelsByApiType(prev => ({
+          ...prev,
+          [apiType]: response.models
+        }));
+        // 更新options中的models为当前API类型的模型
+        setOptions(prev => ({
+          ...prev,
+          models: response.models
+        }));
+      }
+    } catch (error) {
+      console.error('加载模型失败:', error);
+      message.error(`加载${apiType}模型失败`);
+    }
+  };
+
+  // 新增：处理API类型变化
+  const handleApiTypeChange = (apiType: string) => {
+    setSelectedApiType(apiType);
+    form.setFieldValue('llm.api_type', apiType);
+    // 清空当前选择的模型
+    form.setFieldValue('llm.model', undefined);
   };
 
   const handleSave = async () => {
@@ -106,18 +150,17 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
 
   const loadOptions = async () => {
     try {
-      const [modelsRes, rolesRes, modulesRes, pluginsRes] = await Promise.all([
-        apiService.getAvailableModels(),
+      const [rolesRes, modulesRes, pluginsRes] = await Promise.all([
         apiService.getAvailableRoles(),
         apiService.getAvailableModules(),
-        apiService.getAvailablePlugins() // 新增插件选项加载
+        apiService.getAvailablePlugins()
       ]);
       
       setOptions({
-        models: modelsRes.success ? modelsRes.models : [],
+        models: [], // 模型列表将根据API类型动态加载
         roles: rolesRes.success ? rolesRes.roles : [],
         modules: modulesRes.success ? modulesRes.modules : [],
-        plugins: pluginsRes.success ? pluginsRes.plugins : [] // 新增插件选项
+        plugins: pluginsRes.success ? pluginsRes.plugins : []
       });
     } catch (error) {
       message.error('加载选项失败');
@@ -162,18 +205,23 @@ const ConfigModal: React.FC<ConfigModalProps> = ({ visible, onClose, sessionId }
       label: 'LLM配置',
       children: (
         <Form form={form} layout="vertical">
-          <Form.Item label="模型" name="llm.model">
-            <Select placeholder="选择模型">
-              {options.models.map(model => (
-                <Option key={model} value={model}>{model}</Option>
-              ))}
+          <Form.Item label="API类型" name="llm.api_type">
+            <Select 
+              placeholder="选择API类型" 
+              value={selectedApiType}
+              onChange={handleApiTypeChange}
+            >
+              <Option value="lingyun">LingYun</Option>
+              <Option value="local">Local</Option>
+              <Option value="qwen">Qwen</Option>
             </Select>
           </Form.Item>
           
-          <Form.Item label="API类型" name="llm.api_type">
-            <Select placeholder="选择API类型">
-              <Option value="lingyun">LingYun</Option>
-              <Option value="qwen">Qwen</Option>
+          <Form.Item label="模型" name="llm.model">
+            <Select placeholder="选择模型" disabled={!selectedApiType}>
+              {(modelsByApiType[selectedApiType] || []).map(model => (
+                <Option key={model} value={model}>{model}</Option>
+              ))}
             </Select>
           </Form.Item>
         </Form>

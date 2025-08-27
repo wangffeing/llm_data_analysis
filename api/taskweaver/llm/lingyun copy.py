@@ -24,11 +24,13 @@ class LingyunServiceConfig(LLMServiceConfig):
         self.api_type = self.llm_module_config.api_type
         shared_api_base = self.llm_module_config.api_base
         
-        # API base URL configuration - 修正为官方文档地址
+        # API base URL configuration
         self.api_base = self._get_str(
             "api_base",
             shared_api_base if len(shared_api_base) > 5
-            else "http://restapi.bigmodel.cmos:8080/getGptResponse/queryWithTemplateStream",
+            # else "http://bigmodel.zhiduo.cmos:8080/getGptResponsePrd/queryWithTemplateStream",
+            else "http://bigmodel.zhiduo.cmos:8080/getGptResponsePrd/queryWithTemplateStream",
+
         )
 
         # API key configuration
@@ -61,8 +63,8 @@ class LingyunServiceConfig(LLMServiceConfig):
         
         # Generation parameters
         self.stop_token = self._get_list("stop_token", DEFAULT_STOP_TOKEN)
-        self.top_p = self._get_float("top_p", 0.8)
-        self.temperature = self._get_float("temperature", 0.7)
+        self.top_p = self._get_float("top_p", 0.1)
+        self.temperature = self._get_float("temperature", 0.1)
         
         # Request timeout configuration
         self.request_timeout = self._get_int("request_timeout", 120)
@@ -80,10 +82,6 @@ class LingyunServiceConfig(LLMServiceConfig):
             "frontend_id", 
             "612fe2fa8a584a67b19cc184abf85b67"
         )
-        
-        # 新增必需参数 - 固定值
-        self.phone = self._get_str("phone", "15200000000")
-        self.system_id = self._get_str("system_id", "LINGYUN")
 
         # Response format support
         self.response_format = self.llm_module_config.response_format
@@ -108,9 +106,8 @@ class LingyunService(CompletionService, EmbeddingService):
                 "User-Agent": "TaskWeaver-Lingyun-Client/1.0"
             })
             if self.config.api_key:
-                # 修正认证头字段名为官方文档要求的 LLM-Authorization
                 self._session.headers.update({
-                    "LLM-Authorization": self.config.api_key
+                    "Authorization": f"{self.config.api_key}"
                 })
         return self._session
 
@@ -223,7 +220,6 @@ class LingyunService(CompletionService, EmbeddingService):
                 # Add general JSON instruction
                 prompt += "\n\nPlease respond with a valid JSON object."
         
-        # 按照官方文档要求构建请求数据，添加必需的phone和systemId参数
         data = {
             "queryText": str(prompt),
             "msgId": kwargs.get("msg_id", ""),
@@ -231,19 +227,12 @@ class LingyunService(CompletionService, EmbeddingService):
             "templateId": kwargs.get("template_id", ""),
             "type": self.config.model,
             "history": history,
-            "temperature": str(temperature),  # 确保为字符串类型
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
             "frontendId": self.config.frontend_id,
-            "ext": kwargs.get("ext", {}),
-            "phone": self.config.phone,  # 新增必需参数 - 固定值
-            "systemId": self.config.system_id  # 新增必需参数 - 固定值
+            "ext": kwargs.get("ext", {})
         }
-        
-        # 只在非流式请求时添加max_tokens和top_p
-        if not stream:
-            if max_tokens is not None:
-                data["max_tokens"] = max_tokens
-            if top_p is not None:
-                data["top_p"] = top_p
 
         logger.debug(f"Sending request to Lingyun API: {self.config.api_base}")
         

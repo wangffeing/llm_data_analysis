@@ -17,26 +17,77 @@ import { handleError, withErrorHandling } from './utils/errorUtils';
 import ConnectionStatus from './components/ConnectionStatus';
 import GPTVisTestPage from './components/GPTVisTestPage';
 import { apiService } from './services/apiService';
+import DataSourceModal from './components/DataSourceModal';
+import AnalysisGuide from './components/AnalysisGuide';
+import { DataSource } from './types/appTypes';
+
+// 自定义Hook：用户认证管理
+const useUserAuth = () => {
+  const [isUserVerified, setIsUserVerified] = useState(false);
+  const [userInfo, setUserInfo] = useState<any>(null);
+  const [checkingUserStatus, setCheckingUserStatus] = useState(true);
+  const [userVerificationEnabled, setUserVerificationEnabled] = useState(true);
+
+  return {
+    isUserVerified,
+    userInfo,
+    checkingUserStatus,
+    userVerificationEnabled,
+    setIsUserVerified,
+    setUserInfo,
+    setCheckingUserStatus,
+    setUserVerificationEnabled
+  };
+};
+
+// 模态框状态管理
+interface ModalStates {
+  templateSelector: boolean;
+  reportViewer: boolean;
+  dataSourceModal: boolean;
+  analysisGuide: boolean;
+  gptVisTest: boolean;
+}
 
 function AppContent() {
   const { message } = AntdApp.useApp();
   const { styles } = useAppStyles();
   const abortController = useRef<AbortController>(null);
   
-  // 用户验证状态
-  const [isUserVerified, setIsUserVerified] = useState(false);
-  const [userInfo, setUserInfo] = useState<any>(null);
-  const [checkingUserStatus, setCheckingUserStatus] = useState(true);
-  const [userVerificationEnabled, setUserVerificationEnabled] = useState(true);
+  // 使用自定义Hook管理用户认证
+  const {
+    isUserVerified,
+    userInfo,
+    checkingUserStatus,
+    userVerificationEnabled,
+    setIsUserVerified,
+    setUserInfo,
+    setCheckingUserStatus,
+    setUserVerificationEnabled
+  } = useUserAuth();
   
   const [descriptionMode, setDescriptionMode] = useState<DescriptionUpdateMode>('keep');
   
-  // 新增：模板和报告相关状态
-  const [templateSelectorVisible, setTemplateSelectorVisible] = useState(false);
-  const [reportViewerVisible, setReportViewerVisible] = useState(false);
+  // 统一的模态框状态管理
+  const [modalStates, setModalStates] = useState<ModalStates>({
+    templateSelector: false,
+    reportViewer: false,
+    dataSourceModal: false,
+    analysisGuide: false,
+    gptVisTest: false
+  });
+  
+  // 报告和模板相关状态
   const [currentAnalysisResults, setCurrentAnalysisResults] = useState<any>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined);
-  const [gptVisTestVisible, setGptVisTestVisible] = useState(false);
+
+  // 统一的模态框切换函数
+  const toggleModal = useCallback((modalName: keyof ModalStates, visible?: boolean) => {
+    setModalStates(prev => ({
+      ...prev,
+      [modalName]: visible !== undefined ? visible : !prev[modalName]
+    }));
+  }, []);
 
   // 检查用户验证是否启用和用户登录状态
   useEffect(() => {
@@ -69,7 +120,7 @@ function AppContent() {
             
             setUserInfo(userInfo);
             setIsUserVerified(true);
-            setCheckingUserStatus(false); // 添加这行，设置检查状态为false
+            setCheckingUserStatus(false);
             
             // 清除URL参数并刷新页面状态
             const newUrl = window.location.origin + window.location.pathname;
@@ -141,7 +192,7 @@ function AppContent() {
     };
 
     checkUserStatus();
-  }, [userVerificationEnabled]);
+  }, [userVerificationEnabled, setIsUserVerified, setUserInfo, setCheckingUserStatus, setUserVerificationEnabled]);
 
   // 监听认证过期事件
   useEffect(() => {
@@ -153,14 +204,14 @@ function AppContent() {
 
     window.addEventListener('auth:expired', handleAuthExpired);
     return () => window.removeEventListener('auth:expired', handleAuthExpired);
-  }, [message]);
+  }, [message, setIsUserVerified, setUserInfo]);
 
   // 用户验证成功处理
   const handleUserVerified = useCallback((userData: any) => {
     setUserInfo(userData);
     setIsUserVerified(true);
     message.success(`欢迎，${userData.username}！`);
-  }, [message]);
+  }, [message, setUserInfo, setIsUserVerified]);
 
   // 用户登出处理
   const handleUserLogout = useCallback(async () => {
@@ -182,7 +233,7 @@ function AppContent() {
       sessionStorage.removeItem('user_token');
       message.warning('登出请求失败，但已清除本地登录状态');
     }
-  }, [message]);
+  }, [message, setIsUserVerified, setUserInfo]);
 
   // 使用简化的状态管理，传递messageApi
   const {
@@ -205,6 +256,16 @@ function AppContent() {
     setFilePreview,
   } = useAppState(message);
 
+  // 改进handleDataSourceSelect的类型处理
+  const handleDataSourceSelectWrapper = useCallback((dataSource: DataSource) => {
+    // 确保类型安全，使用统一的DataSource类型
+    const safeDataSource: DataSource = {
+      ...dataSource,
+      type: dataSource.type || 'unknown' // 提供默认值
+    };
+    return handleDataSourceSelect(safeDataSource);
+  }, [handleDataSourceSelect]);
+
   // 配置思维链模式
   const thoughtChainConfig = useMemo(() => ({
     descriptionMode
@@ -215,6 +276,19 @@ function AppContent() {
     (newMode: DescriptionUpdateMode) => setDescriptionMode(newMode),
     []
   );
+
+  // 统一的回调函数处理
+  const handleOpenDataSourceModal = useCallback(() => {
+    toggleModal('dataSourceModal', true);
+  }, [toggleModal]);
+
+  const handleShowAnalysisGuide = useCallback(() => {
+    toggleModal('analysisGuide', true);
+  }, [toggleModal]);
+
+  const handleOpenFileUpload = useCallback(() => {
+    setAttachmentsOpen(true);
+  }, [setAttachmentsOpen]);
   
   // 使用增强的聊天Hook，传递messageApi
   const {
@@ -231,26 +305,24 @@ function AppContent() {
     messageApi: message
   });
 
-  // 新增：模板选择处理
+  // 模板选择处理
   const handleTemplateSelect = useCallback((templateId: string, prompt: string) => {
     setSelectedTemplateId(templateId);
     setInputValue(prompt);
-    setTemplateSelectorVisible(false);
+    toggleModal('templateSelector', false);
     message.success('模板已选择，分析提示已生成');
-  }, [setInputValue, message]);
+  }, [setInputValue, message, toggleModal]);
 
-  // 新增：打开模板选择器
+  // 打开模板选择器
   const handleOpenTemplateSelector = useCallback(() => {
     if (!selectedDataSource && (!attachedFiles || attachedFiles.length === 0)) {
       message.warning('请先选择数据源或上传文件');
       return;
     }
-    setTemplateSelectorVisible(true);
-  }, [selectedDataSource, attachedFiles, message]);
+    toggleModal('templateSelector', true);
+  }, [selectedDataSource, attachedFiles, message, toggleModal]);
 
-  // 改进：生成智能报告
-  // 修改handleGenerateReport函数，改为基于session_id生成报告
-  // 修改handleGenerateReport函数，修复TypeScript错误
+  // 生成智能报告
   const handleGenerateReport = useCallback(async (reportData: any) => {
     console.log('收到报告生成请求:', reportData);
     
@@ -277,7 +349,7 @@ function AppContent() {
         // 设置报告数据并显示报告查看器
         setCurrentAnalysisResults(result);
         setSelectedTemplateId('comprehensive');
-        setReportViewerVisible(true);
+        toggleModal('reportViewer', true);
         
         message.success('智能报告生成成功！');
       } else {
@@ -287,13 +359,13 @@ function AppContent() {
     } catch (error) {
       message.destroy();
       console.error('报告生成失败:', error);
-      // 修复error类型问题
       const errorMessage = error instanceof Error ? error.message : String(error);
       message.error(`报告生成失败: ${errorMessage}`);
     }
-  }, [message, currentSession]);
+  }, [message, currentSession, toggleModal]);
 
-  const getDataColumns = useCallback(() => {
+  // 使用useMemo优化数据列计算
+  const dataColumns = useMemo(() => {
     // 如果有选中的数据源，使用原始字段名
     if (selectedDataSource?.table_columns) {
       return selectedDataSource.table_columns;
@@ -308,9 +380,7 @@ function AppContent() {
     return [];
   }, [selectedDataSource, dataPreview, filePreview]);
 
-
-  // 优化消息发送处理，使用传递的messageApi
-  // 修改onSubmit方法，不传递templateId
+  // 优化消息发送处理
   const onSubmit = useCallback(withErrorHandling(async (val: string) => {
     if (!val) return;
   
@@ -334,7 +404,6 @@ function AppContent() {
       return;
     }
   
-    // 修改：不再传递模板ID，因为模板内容已经包含在prompt中
     await sendMessage(val, attachedFiles);
   
     setAttachedFiles([]);
@@ -342,13 +411,14 @@ function AppContent() {
     setSelectedTemplateId(undefined); 
   }, 'sendMessage', message), [messages, selectedDataSource, attachedFiles, isConnected, sendMessage, setAttachedFiles, setAttachmentsOpen, checkSessionValidity, message]);
 
-  // 错误处理函数，传递messageApi
+  // 错误处理函数
   const handleAppError = useCallback((error: Error, errorInfo: React.ErrorInfo) => {
     handleError(error, 'App组件错误', message);
   }, [message]);
+  
   const handleOpenGPTVisTest = useCallback(() => {
-    setGptVisTestVisible(true);
-  }, []);
+    toggleModal('gptVisTest', true);
+  }, [toggleModal]);
 
   // 如果正在检查用户状态，显示加载界面
   if (checkingUserStatus) {
@@ -376,7 +446,6 @@ function AppContent() {
         visible={true}
         onVerificationSuccess={handleUserVerified}
         onCancel={() => {
-          // 用户取消验证时的处理逻辑
           message.warning('需要验证身份才能使用系统');
         }}
       />
@@ -443,6 +512,7 @@ function AppContent() {
             isConnected={isConnected}
           />
         </div>
+        
         <ErrorBoundary 
           onError={handleAppError}
           fallback={
@@ -489,8 +559,12 @@ function AppContent() {
               isLoading={isLoading}
               dataPreview={dataPreview}
               filePreview={filePreview}
-              // 新增：报告生成功能
               onGenerateReport={handleGenerateReport}
+              onOpenDataSourceModal={handleOpenDataSourceModal}
+              onOpenFileUpload={handleOpenFileUpload}
+              onOpenDataSourceManagement={handleOpenDataSourceModal}
+              onOpenTemplateSelector={handleOpenTemplateSelector}
+              onShowAnalysisGuide={handleShowAnalysisGuide}
             />
           </ErrorBoundary>
           
@@ -517,32 +591,49 @@ function AppContent() {
               isLoading={isLoading}
               connectionStatus={connectionStatus}
               setFilePreview={setFilePreview}
-              // 新增：模板选择功能
               onOpenTemplateSelector={handleOpenTemplateSelector}
-              // 新增：传递messages用于判断会话状态
               messages={messages}
             />
           </ErrorBoundary>
         </div>
         
-        {/* 新增：模板选择器 */}
+        {/* 模板选择器 */}
         <TemplateSelector
-          visible={templateSelectorVisible}
-          onClose={() => setTemplateSelectorVisible(false)}
+          visible={modalStates.templateSelector}
+          onClose={() => toggleModal('templateSelector', false)}
           onSelect={handleTemplateSelect}
-          dataColumns={getDataColumns()}
+          dataColumns={dataColumns}
         />
         
-        {/* 新增：报告查看器 */}
+        {/* 报告查看器 */}
         <ReportViewer
-          visible={reportViewerVisible}
-          onClose={() => setReportViewerVisible(false)}
+          visible={modalStates.reportViewer}
+          onClose={() => toggleModal('reportViewer', false)}
           analysisResults={currentAnalysisResults}
           templateId={selectedTemplateId}
         />
+        
         <GPTVisTestPage
-          visible={gptVisTestVisible}
-          onClose={() => setGptVisTestVisible(false)}
+          visible={modalStates.gptVisTest}
+          onClose={() => toggleModal('gptVisTest', false)}
+        />
+        
+        {/* 数据源管理模态框 */}
+        <DataSourceModal
+          visible={modalStates.dataSourceModal}
+          dataSources={dataSources}
+          selectedDataSource={selectedDataSource}
+          onSelect={handleDataSourceSelectWrapper}
+          onCancel={() => toggleModal('dataSourceModal', false)}
+          onDataSourcesChange={refreshDataSources}
+        />
+        
+        {/* 分析指南模态框 */}
+        <AnalysisGuide
+          visible={modalStates.analysisGuide}
+          onClose={() => toggleModal('analysisGuide', false)}
+          selectedDataSource={selectedDataSource}
+          onSubmit={onSubmit}
         />
       </div>
     </ErrorBoundary>
