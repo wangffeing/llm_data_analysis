@@ -5,17 +5,20 @@ import shutil
 import os
 import psutil
 import gc
-from typing import Dict, Optional, List
+import weakref
+import asyncio
+from typing import Dict, Optional, List, Set
 from datetime import datetime, timedelta
 from taskweaver.session.session import Session
 from taskweaver.app.app import TaskWeaverApp
 import copy
 from collections import OrderedDict
+import time
 
 logger = logging.getLogger(__name__)
 
 class MemoryMonitor:
-    """内存监控器"""
+    """增强的内存监控器"""
     
     @staticmethod
     def get_memory_usage() -> Dict[str, float]:
@@ -29,7 +32,8 @@ class MemoryMonitor:
                 "rss_mb": memory_info.rss / 1024 / 1024,  # 物理内存
                 "vms_mb": memory_info.vms / 1024 / 1024,  # 虚拟内存
                 "percent": memory_percent,
-                "available_mb": psutil.virtual_memory().available / 1024 / 1024
+                "available_mb": psutil.virtual_memory().available / 1024 / 1024,
+                "swap_mb": getattr(memory_info, 'swap', 0) / 1024 / 1024  # 交换内存
             }
         except Exception as e:
             logger.error(f"获取内存信息失败: {e}")
@@ -37,7 +41,8 @@ class MemoryMonitor:
                 "rss_mb": 0,
                 "vms_mb": 0,
                 "percent": 0,
-                "available_mb": 0
+                "available_mb": 0,
+                "swap_mb": 0
             }
     
     @staticmethod
@@ -45,13 +50,23 @@ class MemoryMonitor:
         """检查是否存在内存压力"""
         memory_info = MemoryMonitor.get_memory_usage()
         return memory_info["percent"] > threshold_percent
+    
+    @staticmethod
+    def get_process_open_files() -> int:
+        """获取进程打开的文件数量"""
+        try:
+            process = psutil.Process()
+            return len(process.open_files())
+        except Exception:
+            return 0
 
 class SessionManager:
     def __init__(self,
                  cleanup_interval_minutes: int = 60,  # 缩短清理间隔
-                 max_sessions: int = 10,  # 最大会话数限制
-                 memory_threshold_percent: float = 80.0,  # 内存压力阈值
-                 force_cleanup_threshold_percent: float = 90.0):  # 强制清理阈值
+                 max_sessions: int = 10,  # 降低最大会话数
+                 memory_threshold_percent: float = 75.0,  # 降低内存压力阈值
+                 force_cleanup_threshold_percent: float = 85.0,  # 降低强制清理阈值
+                 session_timeout_minutes: int = 120):  # 会话超时时间
         
         self.sessions: OrderedDict[str, Dict] = OrderedDict()  # 使用OrderedDict支持LRU
         self.conversation_ids: Dict[str, str] = {}
@@ -59,52 +74,51 @@ class SessionManager:
         self.max_sessions = max_sessions
         self.memory_threshold_percent = memory_threshold_percent
         self.force_cleanup_threshold_percent = force_cleanup_threshold_percent
+        self.session_timeout_minutes = session_timeout_minutes
         
         self._lock = threading.RLock()
         self._cleanup_timer: Optional[threading.Timer] = None
         self._memory_monitor = MemoryMonitor()
+        self._shutdown_flag = False
         
-        # 统计信息
+        # 增强的统计信息
         self._stats = {
             "total_created": 0,
             "total_cleaned": 0,
             "memory_cleanups": 0,
-            "force_cleanups": 0
+            "force_cleanups": 0,
+            "timeout_cleanups": 0,
+            "workspace_cleanups": 0,
+            "last_cleanup_time": None,
+            "cleanup_errors": 0
         }
+        
+        # 跟踪活跃的异步任务
+        self._active_tasks: Set[asyncio.Task] = set()
+        
+        # 跟踪工作空间路径
+        self._workspace_paths: Set[str] = set()
         
         self._start_cleanup_timer()
         
-        # 默认配置模板
-        # self.default_config = {
-        #     "llm.api_type": "qwen",
-        #     "llm.model": "qwen3-14b",
-        #     "execution_service.kernel_mode": "local",
-        #     "code_generator.enable_auto_plugin_selection": "false",
-        #     "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置
-        #     "code_interpreter.code_verification_on": "false",
-        #     "code_interpreter.allowed_modules": ["pandas", "matplotlib", "numpy", "sklearn", "scipy", "seaborn", "datetime", "typing", "json"],
-        #     "logging.log_file": "taskweaver.log",
-        #     "logging.log_folder": "logs",
-        #     "logging.log_level": "WARNING",
-        #     "planner.prompt_compression": "true",
-        #     "code_generator.prompt_compression": "true",
-        #     "session.max_internal_chat_round_num": 20,
-        #     "session.roles": ["planner", "code_interpreter", "recepta"]
-        # }
+        # 优化的默认配置
         self.default_config = {
             "llm.api_type": "lingyun",
             "llm.model": "qwen2.5-32b",
             "execution_service.kernel_mode": "local",
             "code_generator.enable_auto_plugin_selection": "false",
-            "code_generator.allowed_plugins": ["sql_pull_data"],  # 添加插件过滤配置
+            "code_generator.allowed_plugins": ["sql_pull_data"],
             "code_interpreter.code_verification_on": "false",
-            "code_interpreter.allowed_modules": ["pandas", "matplotlib", "numpy", "sklearn", "scipy", "seaborn", "datetime", "typing", "json"],
+            "code_interpreter.allowed_modules": [
+                "pandas", "matplotlib", "numpy", "sklearn", "scipy", 
+                "seaborn", "datetime", "typing", "json"
+            ],
             "logging.log_file": "taskweaver.log",
             "logging.log_folder": "logs",
             "logging.log_level": "WARNING",
             "planner.prompt_compression": "true",
             "code_generator.prompt_compression": "true",
-            "session.max_internal_chat_round_num": 20,
+            "session.max_internal_chat_round_num": 15,  # 降低轮次限制
             "session.roles": ["planner", "code_interpreter", "recepta"]
         }
         
@@ -113,6 +127,9 @@ class SessionManager:
         if self._cleanup_timer:
             self._cleanup_timer.cancel()
         
+        if self._shutdown_flag:
+            return
+            
         self._cleanup_timer = threading.Timer(
             self.cleanup_interval_minutes * 60,
             self._periodic_cleanup
@@ -121,38 +138,89 @@ class SessionManager:
         self._cleanup_timer.start()
         
     def _periodic_cleanup(self):
-        """定期清理非活跃会话和内存监控"""
+        """增强的定期清理机制"""
         try:
+            if self._shutdown_flag:
+                return
+                
+            start_time = time.time()
+            logger.info("开始定期清理会话...")
+            
             # 检查内存使用情况
             memory_info = self._memory_monitor.get_memory_usage()
-            logger.info(f"内存使用情况: {memory_info}")
+            open_files = self._memory_monitor.get_process_open_files()
+            
+            logger.info(f"内存使用情况: {memory_info}, 打开文件数: {open_files}")
+            
+            # 清理超时会话
+            timeout_cleaned = self._cleanup_timeout_sessions()
             
             # 根据内存压力调整清理策略
             if memory_info["percent"] > self.force_cleanup_threshold_percent:
                 logger.warning(f"内存使用率过高 ({memory_info['percent']:.1f}%)，执行强制清理")
-                self._force_cleanup()
+                force_cleaned = self._force_cleanup()
                 self._stats["force_cleanups"] += 1
+                logger.info(f"强制清理完成，清理了 {force_cleaned} 个会话")
             elif memory_info["percent"] > self.memory_threshold_percent:
                 logger.info(f"内存压力较大 ({memory_info['percent']:.1f}%)，执行积极清理")
-                self._aggressive_cleanup()
+                aggressive_cleaned = self._aggressive_cleanup()
                 self._stats["memory_cleanups"] += 1
+                logger.info(f"积极清理完成，清理了 {aggressive_cleaned} 个会话")
             else:
                 # 正常清理
-                self.cleanup_inactive_sessions(self.cleanup_interval_minutes)
+                normal_cleaned = self.cleanup_inactive_sessions(self.cleanup_interval_minutes)
+                logger.info(f"正常清理完成，清理了 {normal_cleaned} 个会话")
+            
+            # 清理孤立的工作空间
+            self._cleanup_orphaned_workspaces()
+            
+            # 取消已完成的异步任务
+            self._cleanup_completed_tasks()
             
             # 强制垃圾回收
-            gc.collect()
+            collected = gc.collect()
+            logger.info(f"垃圾回收清理了 {collected} 个对象")
+            
+            # 更新统计信息
+            cleanup_time = time.time() - start_time
+            self._stats["last_cleanup_time"] = datetime.now().isoformat()
+            logger.info(f"定期清理完成，耗时 {cleanup_time:.2f} 秒")
             
         except Exception as e:
             logger.error(f"定期清理会话失败: {e}")
+            self._stats["cleanup_errors"] += 1
         finally:
-            self._start_cleanup_timer()
+            if not self._shutdown_flag:
+                self._start_cleanup_timer()
     
-    def _force_cleanup(self):
+    def _cleanup_timeout_sessions(self) -> int:
+        """清理超时会话"""
+        with self._lock:
+            timeout_threshold = datetime.now() - timedelta(minutes=self.session_timeout_minutes)
+            sessions_to_remove = []
+            
+            for session_id, session_data in self.sessions.items():
+                last_activity = session_data.get("last_activity")
+                if isinstance(last_activity, str):
+                    last_activity = datetime.fromisoformat(last_activity)
+                
+                if last_activity and last_activity < timeout_threshold:
+                    sessions_to_remove.append(session_id)
+            
+            cleaned_count = 0
+            for session_id in sessions_to_remove:
+                if self._delete_session_internal(session_id):
+                    cleaned_count += 1
+                    logger.info(f"清理超时会话: {session_id}")
+            
+            self._stats["timeout_cleanups"] += cleaned_count
+            return cleaned_count
+    
+    def _force_cleanup(self) -> int:
         """强制清理 - 清理最老的会话直到内存使用降低"""
         with self._lock:
             initial_count = len(self.sessions)
-            target_count = max(1, initial_count // 2)  # 清理一半会话
+            target_count = max(1, initial_count // 3)  # 清理2/3的会话
             
             # 按最后活动时间排序，清理最老的会话
             sessions_by_activity = sorted(
@@ -165,44 +233,97 @@ class SessionManager:
                 if len(self.sessions) <= target_count:
                     break
                     
-                self.delete_session(session_id)
-                cleaned_count += 1
+                if self._delete_session_internal(session_id):
+                    cleaned_count += 1
             
             logger.warning(f"强制清理完成，清理了 {cleaned_count} 个会话")
-            self._stats["total_cleaned"] += cleaned_count
+            return cleaned_count
     
-    def _aggressive_cleanup(self):
+    def _aggressive_cleanup(self) -> int:
         """积极清理 - 使用更短的超时时间"""
         # 使用更短的超时时间进行清理
-        short_timeout = max(5, self.cleanup_interval_minutes // 2)
+        short_timeout = max(5, self.cleanup_interval_minutes // 3)
         cleaned = self.cleanup_inactive_sessions(short_timeout)
         
         # 如果清理的会话不够，进一步清理
-        if cleaned < 3 and len(self.sessions) > self.max_sessions // 2:
-            self._cleanup_lru_sessions(3)
+        if cleaned < 2 and len(self.sessions) > self.max_sessions // 2:
+            additional_cleaned = self._cleanup_lru_sessions(2)
+            cleaned += additional_cleaned
+            
+        return cleaned
     
-    def _cleanup_lru_sessions(self, count: int):
+    def _cleanup_lru_sessions(self, count: int) -> int:
         """清理最近最少使用的会话"""
         with self._lock:
             if len(self.sessions) <= count:
-                return
+                return 0
             
             # OrderedDict的前面是最老的
             sessions_to_remove = list(self.sessions.keys())[:count]
             
+            cleaned_count = 0
             for session_id in sessions_to_remove:
-                self.delete_session(session_id)
-                logger.info(f"LRU清理会话: {session_id}")
+                if self._delete_session_internal(session_id):
+                    cleaned_count += 1
+                    logger.info(f"LRU清理会话: {session_id}")
             
-            self._stats["total_cleaned"] += len(sessions_to_remove)
+            return cleaned_count
+    
+    def _cleanup_orphaned_workspaces(self):
+        """清理孤立的工作空间目录"""
+        try:
+            workspace_base = self.get_workspace_base_dir()
+            if not os.path.exists(workspace_base):
+                return
+                
+            # 获取所有活跃会话的工作空间路径
+            active_workspaces = set()
+            with self._lock:
+                for session_data in self.sessions.values():
+                    workspace_path = session_data.get("workspace_path")
+                    if workspace_path:
+                        active_workspaces.add(os.path.basename(workspace_path))
+            
+            # 扫描工作空间目录
+            orphaned_count = 0
+            for item in os.listdir(workspace_base):
+                item_path = os.path.join(workspace_base, item)
+                if os.path.isdir(item_path) and item not in active_workspaces:
+                    # 检查目录的修改时间
+                    mtime = datetime.fromtimestamp(os.path.getmtime(item_path))
+                    if mtime < datetime.now() - timedelta(hours=2):  # 2小时前的目录
+                        try:
+                            shutil.rmtree(item_path)
+                            orphaned_count += 1
+                            logger.info(f"清理孤立工作空间: {item_path}")
+                        except Exception as e:
+                            logger.error(f"清理孤立工作空间失败 {item_path}: {e}")
+            
+            if orphaned_count > 0:
+                self._stats["workspace_cleanups"] += orphaned_count
+                logger.info(f"清理了 {orphaned_count} 个孤立工作空间")
+                
+        except Exception as e:
+            logger.error(f"清理孤立工作空间失败: {e}")
+    
+    def _cleanup_completed_tasks(self):
+        """清理已完成的异步任务"""
+        completed_tasks = [task for task in self._active_tasks if task.done()]
+        for task in completed_tasks:
+            self._active_tasks.discard(task)
+            try:
+                # 获取任务结果以清理异常
+                task.result()
+            except Exception as e:
+                logger.debug(f"异步任务异常: {e}")
     
     def _enforce_session_limit(self):
         """强制执行会话数量限制"""
         with self._lock:
             if len(self.sessions) >= self.max_sessions:
                 excess_count = len(self.sessions) - self.max_sessions + 1
-                self._cleanup_lru_sessions(excess_count)
-                logger.info(f"会话数量超限，清理了 {excess_count} 个最老会话")
+                cleaned = self._cleanup_lru_sessions(excess_count)
+                logger.info(f"会话数量超限，清理了 {cleaned} 个最老会话")
         
     def create_session(self, session_id: str = None, custom_config: Dict = None) -> str:
         """创建新会话，支持自定义配置和会话数量限制"""
@@ -217,6 +338,7 @@ class SessionManager:
                 logger.warning(f"Session {session_id} already exists")
                 # 移动到末尾（LRU更新）
                 self.sessions.move_to_end(session_id)
+                self.sessions[session_id]["last_activity"] = datetime.now()
                 return session_id
     
             try:
@@ -254,14 +376,13 @@ class SessionManager:
                     "workspace_path": None,
                     "session_config": session_config,
                     "memory_usage": 0,  # 跟踪内存使用
-                    "resource_count": 0  # 跟踪资源数量
+                    "resource_count": 0,  # 跟踪资源数量
+                    "cleanup_attempts": 0,  # 跟踪清理尝试次数
+                    "last_cleanup_attempt": None
                 }
                 
                 self.sessions[session_id] = session_data
                 self.conversation_ids[session_id] = conversation_id
-                
-                # 移除弱引用相关代码，因为dict不支持弱引用
-                # self._session_refs[session_id] = weakref.ref(session_data)  # 删除这行
                 
                 self._stats["total_created"] += 1
                 logger.info(f"Created session: {session_id} with conversation: {conversation_id}")
@@ -283,16 +404,7 @@ class SessionManager:
             session_data["session_config"].update(new_config)
             
             # 清理现有的TaskWeaver会话，强制重建
-            if "taskweaver_session" in session_data:
-                try:
-                    taskweaver_session = session_data["taskweaver_session"]
-                    if taskweaver_session and hasattr(taskweaver_session, 'stop'):
-                        taskweaver_session.stop()
-                except Exception as e:
-                    logger.error(f"停止TaskWeaver会话失败: {e}")
-                
-                session_data["taskweaver_session"] = None
-                session_data["taskweaver_app"] = None
+            self._cleanup_taskweaver_session(session_data)
             
             logger.info(f"会话 {session_id} 配置已更新，将在下次使用时重建TaskWeaver会话")
             return True
@@ -302,7 +414,7 @@ class SessionManager:
         with self._lock:
             if session_id not in self.sessions:
                 return None
-            return self.sessions[session_id].get("session_config", {})
+            return copy.deepcopy(self.sessions[session_id].get("session_config", {}))
     
     def create_taskweaver_app_for_session(self, session_id: str, base_taskweaver_app) -> Optional[object]:
         """为会话创建专用的TaskWeaver应用实例"""
@@ -311,7 +423,6 @@ class SessionManager:
                 return None
             
             session_data = self.sessions[session_id]
-            session_config = session_data.get("session_config", {})
             
             try:
                 # 创建会话专用的TaskWeaver应用
@@ -331,23 +442,26 @@ class SessionManager:
             # 更新最后活动时间和LRU位置
             self.sessions[session_id]["last_activity"] = datetime.now()
             self.sessions.move_to_end(session_id)  # 移动到末尾
-            return self.sessions[session_id]
+            return copy.deepcopy(self.sessions[session_id])
 
     def get_or_create_session(self, session_id: str, custom_config: Dict = None) -> Dict:
         with self._lock:
             session = self.sessions.get(session_id)
             if session:
                 session["last_activity"] = datetime.now()
-                return session
+                self.sessions.move_to_end(session_id)
+                return copy.deepcopy(session)
 
             self.create_session(session_id, custom_config)
-            return self.sessions.get(session_id)
+            return copy.deepcopy(self.sessions.get(session_id))
 
     def update_heartbeat(self, session_id: str) -> bool:
         """更新会话的心跳时间"""
         with self._lock:
             if session_id in self.sessions:
                 self.sessions[session_id]["last_heartbeat"] = datetime.now()
+                self.sessions[session_id]["last_activity"] = datetime.now()
+                self.sessions.move_to_end(session_id)  # LRU更新
                 logger.debug(f"Heartbeat updated for session: {session_id}")
                 return True
             return False
@@ -355,17 +469,30 @@ class SessionManager:
     def _cleanup_taskweaver_session(self, session_data: Dict) -> None:
         """增强的TaskWeaver会话资源清理"""
         try:
+            session_data["cleanup_attempts"] = session_data.get("cleanup_attempts", 0) + 1
+            session_data["last_cleanup_attempt"] = datetime.now().isoformat()
+            
             taskweaver_session = session_data.get("taskweaver_session")
             taskweaver_app = session_data.get("taskweaver_app")
             
+            # 清理TaskWeaver会话
             if taskweaver_session:
-                # 获取工作空间路径
-                if hasattr(taskweaver_session, 'execution_cwd'):
-                    workspace_path = taskweaver_session.execution_cwd
-                    session_data["workspace_path"] = workspace_path
-                
-                # 停止TaskWeaver会话
                 try:
+                    # 获取工作空间路径
+                    if hasattr(taskweaver_session, 'execution_cwd'):
+                        workspace_path = taskweaver_session.execution_cwd
+                        session_data["workspace_path"] = workspace_path
+                        self._workspace_paths.add(workspace_path)
+                    
+                    # 停止所有正在运行的任务
+                    if hasattr(taskweaver_session, 'stop_all_tasks'):
+                        taskweaver_session.stop_all_tasks()
+                    
+                    # 清理会话状态
+                    if hasattr(taskweaver_session, 'clear_state'):
+                        taskweaver_session.clear_state()
+                    
+                    # 关闭会话
                     if hasattr(taskweaver_session, 'stop'):
                         taskweaver_session.stop()
                     elif hasattr(taskweaver_session, 'close'):
@@ -374,6 +501,14 @@ class SessionManager:
                     # 清理会话内部状态
                     if hasattr(taskweaver_session, 'clear'):
                         taskweaver_session.clear()
+                    
+                    # 清理内存中的对话历史
+                    if hasattr(taskweaver_session, 'conversation_history'):
+                        taskweaver_session.conversation_history.clear()
+                    
+                    # 清理执行上下文
+                    if hasattr(taskweaver_session, 'execution_context'):
+                        taskweaver_session.execution_context = None
                         
                 except Exception as session_cleanup_error:
                     logger.error(f"清理TaskWeaver会话失败: {session_cleanup_error}")
@@ -381,236 +516,223 @@ class SessionManager:
             # 清理TaskWeaver应用实例
             if taskweaver_app:
                 try:
+                    # 停止应用级别的服务
+                    if hasattr(taskweaver_app, 'stop_services'):
+                        taskweaver_app.stop_services()
+                    
+                    # 清理应用缓存
+                    if hasattr(taskweaver_app, 'clear_cache'):
+                        taskweaver_app.clear_cache()
+                    
+                    # 关闭应用
                     if hasattr(taskweaver_app, 'cleanup'):
                         taskweaver_app.cleanup()
                     elif hasattr(taskweaver_app, 'close'):
                         taskweaver_app.close()
                     elif hasattr(taskweaver_app, 'shutdown'):
                         taskweaver_app.shutdown()
-                        
-                    # 清理应用缓存
-                    if hasattr(taskweaver_app, 'clear_cache'):
-                        taskweaver_app.clear_cache()
+                    
+                    # 清理应用级别的资源
+                    if hasattr(taskweaver_app, 'release_resources'):
+                        taskweaver_app.release_resources()
                         
                 except Exception as app_cleanup_error:
                     logger.error(f"清理TaskWeaver应用失败: {app_cleanup_error}")
             
-            # 清空引用
+            # 清空引用并重置计数器
             session_data["taskweaver_session"] = None
             session_data["taskweaver_app"] = None
             session_data["memory_usage"] = 0
             session_data["resource_count"] = 0
             
+            # 显式删除对象引用
+            if taskweaver_session:
+                del taskweaver_session
+            if taskweaver_app:
+                del taskweaver_app
+            
             # 强制垃圾回收
-            del taskweaver_session, taskweaver_app
             gc.collect()
             
             logger.info("TaskWeaver会话和应用已彻底清理")
         except Exception as e:
             logger.error(f"清理TaskWeaver会话失败: {e}")
+            session_data["cleanup_attempts"] = session_data.get("cleanup_attempts", 0) + 1
     
     def _cleanup_workspace(self, workspace_path: str) -> None:
-        """删除整个工作空间目录（含安全路径检查）"""
+        """增强的工作空间清理"""
         try:
-            if workspace_path and os.path.exists(workspace_path):
-                # 修正安全路径检查 - 使用正确的基础路径
-                safe_base = os.path.abspath(self.get_workspace_base_dir())
-                abs_path = os.path.abspath(workspace_path)
-                if not abs_path.startswith(safe_base):
-                    logger.warning(f"拒绝删除非工作空间路径: {workspace_path}")
-                    return
+            if not workspace_path or not os.path.exists(workspace_path):
+                return
+                
+            # 安全路径检查
+            safe_base = os.path.abspath(self.get_workspace_base_dir())
+            abs_path = os.path.abspath(workspace_path)
+            if not abs_path.startswith(safe_base):
+                logger.warning(f"拒绝删除非工作空间路径: {workspace_path}")
+                return
 
-                # 支持模式匹配删除
-                if "*" in workspace_path or "session_" in workspace_path:
-                    import glob
-                    for path in glob.glob(workspace_path):
-                        if os.path.exists(path):
-                            shutil.rmtree(path)
-                            logger.info(f"已删除工作空间目录: {path}")
-                else:
-                    shutil.rmtree(abs_path)
-                    logger.info(f"已删除工作空间目录: {abs_path}")
-            else:
-                logger.debug(f"工作空间目录不存在或路径无效: {workspace_path}")
+            # 强制关闭可能打开的文件句柄
+            try:
+                import psutil
+                current_process = psutil.Process()
+                for file_info in current_process.open_files():
+                    if abs_path in file_info.path:
+                        logger.warning(f"检测到打开的文件: {file_info.path}")
+            except Exception:
+                pass
+            
+            # 递归删除目录
+            def remove_readonly(func, path, _):
+                """处理只读文件的删除"""
+                import stat
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            
+            shutil.rmtree(abs_path, onerror=remove_readonly)
+            
+            # 从跟踪集合中移除
+            self._workspace_paths.discard(workspace_path)
+            
+            logger.info(f"已删除工作空间目录: {abs_path}")
+            
         except Exception as e:
             logger.error(f"清理工作空间失败 {workspace_path}: {e}")
     
     def get_workspace_base_dir(self) -> str:
         """获取工作空间基础目录"""
-        from config import get_config
-        config = get_config()
-        return os.path.join(config.taskweaver_project_path, "workspace", "sessions")
+        try:
+            from config import get_config
+            config = get_config()
+            return os.path.join(config.taskweaver_project_path, "workspace", "sessions")
+        except Exception:
+            # fallback路径
+            return os.path.join(os.getcwd(), "project", "workspace", "sessions")
+
+    def _delete_session_internal(self, session_id: str) -> bool:
+        """内部会话删除方法（不加锁）"""
+        if session_id not in self.sessions:
+            return False
+        
+        try:
+            session_data = self.sessions[session_id]
+            
+            # 清理TaskWeaver会话
+            self._cleanup_taskweaver_session(session_data)
+            
+            # 清理工作空间
+            workspace_path = session_data.get("workspace_path")
+            if workspace_path:
+                self._cleanup_workspace(workspace_path)
+            
+            # 从字典中移除
+            del self.sessions[session_id]
+            if session_id in self.conversation_ids:
+                del self.conversation_ids[session_id]
+            
+            self._stats["total_cleaned"] += 1
+            logger.info(f"Session {session_id} deleted successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to delete session {session_id}: {e}")
+            return False
 
     def delete_session(self, session_id: str, chat_service=None) -> bool:
         """删除指定的会话（增强清理）"""
         with self._lock:
-            if session_id not in self.sessions:
-                logger.warning(f"Session {session_id} not found for deletion")
-                return False
-    
-            try:
-                session_data = self.sessions[session_id]
-                
-                # 先取消活跃任务（如果提供了chat_service）
-                if chat_service:
-                    try:
-                        import asyncio
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.create_task(chat_service.cancel_task(session_id))
-                        else:
-                            asyncio.run(chat_service.cancel_task(session_id))
-                    except Exception as cancel_error:
-                        logger.error(f"取消会话任务失败: {cancel_error}")
-                
-                # 清理TaskWeaver会话
-                self._cleanup_taskweaver_session(session_data)
-                
-                # 清理工作空间
-                workspace_path = session_data.get("workspace_path")
-                if workspace_path:
-                    self._cleanup_workspace(workspace_path)
-                
-                # 删除会话记录
-                del self.sessions[session_id]
-                if session_id in self.conversation_ids:
-                    del self.conversation_ids[session_id]
+            return self._delete_session_internal(session_id)
 
-                logger.info(f"Deleted session: {session_id}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"Failed to delete session {session_id}: {e}")
-                return False
-
-    def list_sessions(self) -> List[str]:
+    def cleanup_inactive_sessions(self, inactive_minutes: int = 60) -> int:
+        """清理非活跃会话"""
         with self._lock:
-            return list(self.sessions.keys())
-
-    def clear_all_sessions(self) -> None:
-        with self._lock:
-            session_ids = list(self.sessions.keys())
-            for session_id in session_ids:
-                self.delete_session(session_id)
+            cutoff_time = datetime.now() - timedelta(minutes=inactive_minutes)
+            sessions_to_remove = []
             
-            logger.info(f"清理了 {len(session_ids)} 个会话")
-
-    def get_conversation_id(self, session_id: str) -> str:
-        with self._lock:
-            return self.conversation_ids.get(session_id, "")
-
-    def cleanup_inactive_sessions(self, timeout_minutes: int = 30) -> int:
-        activity_cutoff = datetime.now() - timedelta(minutes=timeout_minutes)
-        heartbeat_cutoff = datetime.now() - timedelta(minutes=2)
-        inactive_sessions = []
-
-        with self._lock:
-            for sid, data in list(self.sessions.items()):
-                last_activity = data.get("last_activity")
-                last_heartbeat = data.get("last_heartbeat")
-
-                # 检查活动时间
-                is_inactive = False
+            for session_id, session_data in self.sessions.items():
+                last_activity = session_data.get("last_activity")
                 if isinstance(last_activity, str):
                     try:
                         last_activity = datetime.fromisoformat(last_activity)
                     except ValueError:
-                        last_activity = None
+                        # 如果解析失败，认为是很久以前的会话
+                        last_activity = datetime.min
                 
-                if last_activity and last_activity < activity_cutoff:
-                    is_inactive = True
-
-                # 检查心跳时间
-                is_heartbeat_lost = False
-                if not is_inactive:
-                    if isinstance(last_heartbeat, str):
-                        try:
-                            last_heartbeat = datetime.fromisoformat(last_heartbeat)
-                        except ValueError:
-                            last_heartbeat = None
-                    
-                    if last_heartbeat and last_heartbeat < heartbeat_cutoff:
-                        is_heartbeat_lost = True
-
-                if is_inactive or is_heartbeat_lost:
-                    logger.info(
-                        f"将清理会话 {sid}: "
-                        f"inactive={is_inactive}, heartbeat_lost={is_heartbeat_lost}"
-                    )
-                    inactive_sessions.append(sid)
-
-            for session_id in inactive_sessions:
-                self.delete_session(session_id)
-
-        cleaned_count = len(inactive_sessions)
-        self._stats["total_cleaned"] += cleaned_count
-        logger.info(f"清理了 {cleaned_count} 个非活跃会话")
-        return cleaned_count
-
-    def get_session_message_history(self, session_id: str) -> List[Dict]:
-        with self._lock:
-            session_data = self.sessions.get(session_id)
-            if session_data:
-                return session_data.get("messages", [])
-            return []
+                if last_activity and last_activity < cutoff_time:
+                    sessions_to_remove.append(session_id)
+            
+            cleaned_count = 0
+            for session_id in sessions_to_remove:
+                if self._delete_session_internal(session_id):
+                    cleaned_count += 1
+            
+            if cleaned_count > 0:
+                logger.info(f"Cleaned up {cleaned_count} inactive sessions")
+            
+            return cleaned_count
 
     def get_session_stats(self) -> Dict:
+        """获取会话管理统计信息"""
         with self._lock:
-            total_sessions = len(self.sessions)
-            active_sessions = sum(1 for s in self.sessions.values() if s.get("status") == "active")
             memory_info = self._memory_monitor.get_memory_usage()
             
             return {
-                "total_sessions": total_sessions,
-                "active_sessions": active_sessions,
-                "cleanup_interval_minutes": self.cleanup_interval_minutes,
+                "active_sessions": len(self.sessions),
                 "max_sessions": self.max_sessions,
                 "memory_usage": memory_info,
-                "cleanup_stats": self._stats
+                "open_files": self._memory_monitor.get_process_open_files(),
+                "workspace_paths_tracked": len(self._workspace_paths),
+                "active_tasks": len(self._active_tasks),
+                "stats": copy.deepcopy(self._stats),
+                "cleanup_interval_minutes": self.cleanup_interval_minutes,
+                "session_timeout_minutes": self.session_timeout_minutes
             }
 
-    def force_memory_cleanup(self) -> Dict:
-        """手动触发内存清理"""
-        try:
-            before_memory = self._memory_monitor.get_memory_usage()
-            
-            # 执行强制清理
-            self._force_cleanup()
-            
-            # 强制垃圾回收
-            import gc
-            collected = gc.collect()
-            
-            after_memory = self._memory_monitor.get_memory_usage()
-            
-            return {
-                "before_memory": before_memory,
-                "after_memory": after_memory,
-                "objects_collected": collected,
-                "sessions_cleaned": self._stats["total_cleaned"]
-            }
-        except Exception as e:
-            logger.error(f"手动内存清理失败: {e}")
-            return {"error": str(e)}
-
-    def shutdown(self) -> None:
-        """关闭SessionManager并清理所有资源"""
+    def shutdown(self):
+        """优雅关闭会话管理器"""
         logger.info("开始关闭SessionManager...")
         
-        # 取消定时器
+        self._shutdown_flag = True
+        
+        # 停止定时器
         if self._cleanup_timer:
             self._cleanup_timer.cancel()
             self._cleanup_timer = None
         
-        # 清理所有会话
-        self.clear_all_sessions()
+        # 取消所有活跃任务
+        for task in list(self._active_tasks):
+            if not task.done():
+                task.cancel()
         
-        # 强制垃圾回收
-        import gc
+        # 清理所有会话
+        with self._lock:
+            session_ids = list(self.sessions.keys())
+            for session_id in session_ids:
+                try:
+                    self._delete_session_internal(session_id)
+                except Exception as e:
+                    logger.error(f"关闭时清理会话 {session_id} 失败: {e}")
+        
+        # 清理所有跟踪的工作空间
+        for workspace_path in list(self._workspace_paths):
+            try:
+                self._cleanup_workspace(workspace_path)
+            except Exception as e:
+                logger.error(f"关闭时清理工作空间 {workspace_path} 失败: {e}")
+        
+        # 最终垃圾回收
         gc.collect()
         
-        logger.info("SessionManager已关闭")
-    
+        logger.info(f"SessionManager已关闭，清理了 {self._stats['total_cleaned']} 个会话")
+
+    def __del__(self):
+        """析构函数确保资源清理"""
+        try:
+            if not self._shutdown_flag:
+                self.shutdown()
+        except Exception:
+            pass  # 析构函数中不应抛出异常
+
     def get_sessions_by_ip(self, client_ip: str, only_active: bool = True) -> List[str]:
         """
         根据客户端 IP 返回会话 ID 列表。

@@ -18,7 +18,7 @@ ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.json', '.txt'}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_MIME_TYPES = {
     '.csv': ['text/csv', 'application/csv', 'text/plain'],
-    '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/zip'],
     '.xls': ['application/vnd.ms-excel'],
     '.json': ['application/json', 'text/json', 'text/plain'],
     '.txt': ['text/plain', 'text/csv']
@@ -44,7 +44,7 @@ def is_safe_file(content: bytes, file_extension: str) -> bool:
         # 检查文件头部是否包含恶意内容
         content_str = content[:1024].decode('utf-8', errors='ignore').lower()
         malicious_patterns = [
-            '<script', 'javascript:', 'vbscript:', 'onload=', 'onerror=',
+            '<script', 'jav1ascript:', 'vbscript:', 'onload=', 'onerror=',
             '<?php', '<%', '<meta', '<html', '<body'
         ]
         

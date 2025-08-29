@@ -1,43 +1,70 @@
 """
-OpenGauss数据库适配器
+OpenGauss数据库适配器 - 异步版本
 """
+import asyncio
 import py_opengauss
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
 from .base_adapter import DatabaseAdapter
 import logging
+from concurrent.futures import ThreadPoolExecutor
+import functools
 
 logger = logging.getLogger(__name__)
 
 class OpenGaussAdapter(DatabaseAdapter):
-    """OpenGauss数据库适配器"""
+    """OpenGauss数据库适配器 - 异步版本"""
     
-    def connect(self) -> Any:
+    def __init__(self, connection_config: Dict[str, Any]):
+        super().__init__(connection_config)
+        self.executor = ThreadPoolExecutor(max_workers=5)  # 线程池
+        self.connection_timeout = connection_config.get('connection_timeout', 30)
+        self.query_timeout = connection_config.get('query_timeout', 300)  # 5分钟查询超时
+    
+    async def connect(self) -> Any:
         """建立OpenGauss连接"""
+        def _sync_connect():
+            try:
+                # 如果connection_config包含完整的连接字符串
+                if 'connection_string' in self.connection_config:
+                    return py_opengauss.open(self.connection_config['connection_string'])
+                else:
+                    # 构建连接字符串
+                    conn_str = f"opengauss://{self.connection_config['user']}:{self.connection_config['password']}@{self.connection_config['host']}:{self.connection_config['port']}/{self.connection_config['database']}"
+                    return py_opengauss.open(conn_str)
+            except Exception as e:
+                logger.error(f"OpenGauss连接失败: {e}")
+                raise
+        
         try:
-            # 如果connection_config包含完整的连接字符串
-            if 'connection_string' in self.connection_config:
-                self.connection = py_opengauss.open(self.connection_config['connection_string'])
-            else:
-                # 构建连接字符串
-                conn_str = f"opengauss://{self.connection_config['user']}:{self.connection_config['password']}@{self.connection_config['host']}:{self.connection_config['port']}/{self.connection_config['database']}"
-                self.connection = py_opengauss.open(conn_str)
-            
+            loop = asyncio.get_event_loop()
+            self.connection = await loop.run_in_executor(
+                self.executor, 
+                _sync_connect
+            )
             logger.info("OpenGauss连接成功")
             return self.connection
         except Exception as e:
-            logger.error(f"OpenGauss连接失败: {e}")
+            logger.error(f"OpenGauss异步连接失败: {e}")
             raise
     
-    def disconnect(self):
+    async def disconnect(self):
         """关闭OpenGauss连接"""
+        def _sync_disconnect():
+            if self.connection:
+                self.connection.close()
+                logger.info("OpenGauss连接已关闭")
+        
         if self.connection:
-            self.connection.close()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self.executor, _sync_disconnect)
             self.connection = None
-            logger.info("OpenGauss连接已关闭")
+        
+        if self.executor:
+            self.executor.shutdown(wait=False)
     
-    def execute_query(self, query: str, params: Optional[Tuple] = None) -> List[Dict]:
-        """执行查询并返回结果"""
+    def _sync_execute_query(self, query: str, params: Optional[Tuple] = None) -> List[Dict]:
+        """同步执行查询的内部方法"""
         try:
             # 使用prepare方法准备查询
             if params:
@@ -76,8 +103,28 @@ class OpenGaussAdapter(DatabaseAdapter):
             logger.error(f"OpenGauss查询执行失败: {e}")
             raise
     
-    def execute_query_to_dataframe(self, query: str, params: Optional[Tuple] = None) -> pd.DataFrame:
-        """执行查询并返回DataFrame"""
+    async def execute_query(self, query: str, params: Optional[Tuple] = None) -> List[Dict]:
+        """异步执行查询并返回结果"""
+        loop = asyncio.get_event_loop()
+        try:
+            # 在线程池中执行同步数据库操作
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    functools.partial(self._sync_execute_query, query, params)
+                ),
+                timeout=self.query_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"查询超时: {query[:100]}...")
+            raise Exception(f"查询超时 ({self.query_timeout}秒)")
+        except Exception as e:
+            logger.error(f"异步查询执行失败: {e}")
+            raise
+    
+    def _sync_execute_query_to_dataframe(self, query: str, params: Optional[Tuple] = None) -> pd.DataFrame:
+        """同步执行查询转DataFrame的内部方法"""
         try:
             # 使用prepare方法准备查询
             if params:
@@ -118,8 +165,27 @@ class OpenGaussAdapter(DatabaseAdapter):
             logger.error(f"OpenGauss查询转DataFrame失败: {e}")
             raise
     
-    def execute_non_query(self, query: str, params: Optional[Tuple] = None) -> int:
-        """执行非查询语句"""
+    async def execute_query_to_dataframe(self, query: str, params: Optional[Tuple] = None) -> pd.DataFrame:
+        """异步执行查询并返回DataFrame"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    functools.partial(self._sync_execute_query_to_dataframe, query, params)
+                ),
+                timeout=self.query_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"查询超时: {query[:100]}...")
+            raise Exception(f"查询超时 ({self.query_timeout}秒)")
+        except Exception as e:
+            logger.error(f"异步查询转DataFrame失败: {e}")
+            raise
+    
+    def _sync_execute_non_query(self, query: str, params: Optional[Tuple] = None) -> int:
+        """同步执行非查询语句的内部方法"""
         try:
             # 使用prepare方法准备查询
             if params:
@@ -144,8 +210,27 @@ class OpenGaussAdapter(DatabaseAdapter):
             logger.error(f"OpenGauss非查询执行失败: {e}")
             raise
     
-    def get_table_info(self, table_name: str) -> Dict[str, Any]:
-        """获取表信息"""
+    async def execute_non_query(self, query: str, params: Optional[Tuple] = None) -> int:
+        """异步执行非查询语句"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    functools.partial(self._sync_execute_non_query, query, params)
+                ),
+                timeout=self.query_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"非查询操作超时: {query[:100]}...")
+            raise Exception(f"操作超时 ({self.query_timeout}秒)")
+        except Exception as e:
+            logger.error(f"异步非查询执行失败: {e}")
+            raise
+    
+    def _sync_get_table_info(self, table_name: str) -> Dict[str, Any]:
+        """同步获取表信息的内部方法"""
         try:
             query = """
             SELECT 
@@ -189,8 +274,27 @@ class OpenGaussAdapter(DatabaseAdapter):
             logger.error(f"获取OpenGauss表信息失败: {e}")
             raise
     
-    def get_table_columns(self, table_name: str) -> List[str]:
-        """获取表的列名"""
+    async def get_table_info(self, table_name: str) -> Dict[str, Any]:
+        """异步获取表信息"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    functools.partial(self._sync_get_table_info, table_name)
+                ),
+                timeout=self.query_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"获取表信息超时: {table_name}")
+            raise Exception(f"获取表信息超时 ({self.query_timeout}秒)")
+        except Exception as e:
+            logger.error(f"异步获取表信息失败: {e}")
+            raise
+    
+    def _sync_get_table_columns(self, table_name: str) -> List[str]:
+        """同步获取表列名的内部方法"""
         try:
             query = """
             SELECT column_name 
@@ -215,14 +319,52 @@ class OpenGaussAdapter(DatabaseAdapter):
             logger.error(f"获取OpenGauss表列名失败: {e}")
             raise
     
-    def test_connection(self) -> bool:
-        """测试OpenGauss连接"""
+    async def get_table_columns(self, table_name: str) -> List[str]:
+        """异步获取表的列名"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    functools.partial(self._sync_get_table_columns, table_name)
+                ),
+                timeout=self.query_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"获取表列名超时: {table_name}")
+            raise Exception(f"获取表列名超时 ({self.query_timeout}秒)")
+        except Exception as e:
+            logger.error(f"异步获取表列名失败: {e}")
+            raise
+    
+    def _sync_test_connection(self) -> bool:
+        """同步测试连接的内部方法"""
         try:
             prepared_stmt = self.connection.prepare("SELECT 1")
             result = prepared_stmt()
             return True
         except Exception as e:
             logger.error(f"OpenGauss连接测试失败: {e}")
+            return False
+    
+    async def test_connection(self) -> bool:
+        """异步测试OpenGauss连接"""
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, 
+                    self._sync_test_connection
+                ),
+                timeout=30  # 连接测试30秒超时
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.error("连接测试超时")
+            return False
+        except Exception as e:
+            logger.error(f"异步连接测试失败: {e}")
             return False
     
     def _convert_params_format(self, query: str, param_count: int) -> str:

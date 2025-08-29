@@ -38,6 +38,7 @@ class LocalServiceConfig(LLMServiceConfig):
             "model",
             shared_model if shared_model is not None else "Qwen3-8B",
         )
+        self.model = '/home/ps/models/qwen/Qwen3-8B'
         
         # 嵌入模型配置（如果需要）
         shared_embedding_model = self.llm_module_config.embedding_model
@@ -122,27 +123,12 @@ class LocalService(CompletionService, EmbeddingService):
                 tools_kwargs["tool_choice"] = kwargs["tool_choice"]
             
             # 响应格式配置
-            if "response_format" in kwargs:
-                response_format = kwargs["response_format"]
-            elif self.config.response_format == "json_object":
-                response_format = {"type": "json_object"}
-            elif self.config.response_format == "json_schema":
-                response_format = {"type": "json_schema"}
-                assert "json_schema" in kwargs, "JSON schema is required for JSON schema response format"
-                response_format["json_schema"] = {
-                    "name": "response",
-                    "strict": True,
-                    "schema": kwargs["json_schema"],
-                }
-            else:
-                response_format = None
-            
-            # vLLM约束生成支持
+            response_format = None
             extra_body = {}
+            
             if self.config.support_constrained_generation and "json_schema" in kwargs:
                 extra_body["guided_json"] = kwargs["json_schema"]
-                extra_body["guided_decoding_backend"] = self.config.json_schema_enforcer
-            
+                        
             # 消息预处理
             processed_messages = messages.copy()
             for i, message in enumerate(processed_messages):

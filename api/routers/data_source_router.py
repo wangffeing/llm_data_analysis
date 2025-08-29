@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from services.data_source_service import DataSourceService
 from config import get_config
 from auth import verify_admin_permission_cookie
+from db_connection import get_db_manager  # 添加缺失的导入
 
 router = APIRouter()
 
@@ -182,28 +183,24 @@ async def get_data_preview(
     limit: int = 5,
     service: DataSourceService = Depends(get_data_source_service)
 ):
-    """获取数据预览"""
+    """获取数据源预览数据"""
     try:
-        # 使用数据源服务获取数据源信息
-        data_sources = service.get_all_data_sources()
-        
-        if source_name not in data_sources:
+        # 获取数据源配置
+        source_config = service.get_data_source(source_name)
+        if not source_config:
             raise HTTPException(status_code=404, detail="数据源不存在")
         
-        source_config = data_sources[source_name]
         table_name = source_config["table_name"]
-        table_columns = ','.join(source_config['table_columns'])
-
-        # 导入数据库连接
-        from db_connection import get_db_manager
+        table_columns = ", ".join(source_config["table_columns"])
         
+        # 获取数据库管理器
         db_manager = get_db_manager()
         
         # 构建查询语句
         query = f"SELECT {table_columns} FROM {table_name} LIMIT {limit}"
         
-        # 执行查询
-        df = db_manager.execute_query_to_dataframe(query)
+        # 执行查询 - 改为异步调用
+        df = await db_manager.execute_query_to_dataframe(query)
         df.columns = source_config['table_columns']
 
         # 转换为字典格式

@@ -62,28 +62,25 @@ export const useSSE = ({ sessionId, onMessage, onError, messageApi }: UseSSEProp
   }, [onError]);
 
   const cleanup = useCallback(() => {
-
-    // 清理EventSource连接
+    // 确保EventSource完全关闭
     if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
     }
     
     // 清理所有定时器
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
+    [retryTimeoutRef, connectionTimeoutRef].forEach(ref => {
+        if (ref.current) {
+            clearTimeout(ref.current);
+            ref.current = null;
+        }
+    });
     
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
-    
-    // 重置状态
+    // 重置所有状态
     isConnectingRef.current = false;
     setIsConnected(false);
     setConnectionStatus('disconnected');
+    setRetryCount(0);
   }, []);
 
   const scheduleRetry = useCallback(() => {

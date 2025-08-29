@@ -5,7 +5,7 @@ from typing import Dict, Any
 from .base_adapter import DatabaseAdapter
 from .mysql_adapter import MySQLAdapter
 from .sqlite_adapter import SQLiteAdapter
-from .opengauss_adapter import OpenGaussAdapter
+from .openguass_adapter import OpenGaussAdapter
 import logging
 import os
 
