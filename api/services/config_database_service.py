@@ -23,12 +23,20 @@ class ConfigDatabaseService:
         self.db_path = db_path
         # 创建专用的数据库操作线程池
         self.db_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="db_ops")
-    
+        self._connection_lock = Lock()
+        self._connection_pool_size = 5
+
+    @contextmanager
     def get_connection(self):
-        """获取数据库连接"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """使用连接池管理数据库连接"""
+        with self._connection_lock:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+            finally:
+                conn.close()
+
     
     def _row_to_dict(self, row):
         """将 sqlite3.Row 对象转换为字典，提供 .get() 方法兼容性"""
@@ -86,38 +94,40 @@ class ConfigDatabaseService:
     
     # 添加单个数据源查询方法
     def _sync_get_single_data_source(self, source_key: str) -> Optional[Dict]:
-        """优化：直接查询单个数据源，避免获取全部数据"""
+        """优化：使用JOIN查询避免多次数据库访问"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 查询数据源基本信息
             cursor.execute('''
-                SELECT source_key, table_name, table_des, table_order, database_type
-                FROM data_sources 
-                WHERE source_key = ?
-            ''', (source_key,))
-            source_row = cursor.fetchone()
-            if not source_row:
-                return None
-            
-            # 查询列信息
-            cursor.execute('''
-                SELECT dsc.column_name, dsc.column_display_name
+                SELECT ds.source_key, ds.table_name, ds.table_des, ds.table_order, ds.database_type,
+                       dsc.column_name, dsc.column_display_name, dsc.column_order
                 FROM data_sources ds
-                JOIN data_source_columns dsc ON ds.id = dsc.source_id
+                LEFT JOIN data_source_columns dsc ON ds.id = dsc.source_id
                 WHERE ds.source_key = ?
                 ORDER BY dsc.column_order
             ''', (source_key,))
-            columns_data = cursor.fetchall()
             
-            return {
-                'table_name': source_row['table_name'],
-                'table_des': source_row['table_des'],
-                'table_order': source_row['table_order'],
-                'table_columns': [col['column_name'] for col in columns_data],
-                'table_columns_names': [col['column_display_name'] for col in columns_data],
-                'database_type': self._safe_get(source_row, 'database_type', 'unknown')
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+                
+            # 构建结果
+            first_row = rows[0]
+            result = {
+                'table_name': first_row['table_name'],
+                'table_des': first_row['table_des'],
+                'table_order': first_row['table_order'],
+                'table_columns': [],
+                'table_columns_names': [],
+                'database_type': self._safe_get(first_row, 'database_type', 'unknown')
             }
+            
+            for row in rows:
+                if row['column_name']:
+                    result['table_columns'].append(row['column_name'])
+                    result['table_columns_names'].append(row['column_display_name'])
+            
+            return result
     
     async def get_data_source(self, source_key: str) -> Optional[Dict]:
         """优化：直接查询单个数据源"""

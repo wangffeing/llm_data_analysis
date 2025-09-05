@@ -318,7 +318,6 @@ class ChatService:
     
         return prompt
 
-    # 在 _process_taskweaver_response 方法中
     async def _process_taskweaver_response(self, response_round, session_data) -> Tuple[str, List[Dict]]:
         """处理TaskWeaver响应"""
         final_response = ""
@@ -329,8 +328,7 @@ class ChatService:
         ALLOWED_EXTENSIONS = {".csv", ".json", ".xls", ".xlsx", ".png", ".jpg", ".jpeg", ".txt", ".vis"}
 
         def is_allowed_file(filename: str) -> bool:
-            ext = os.path.splitext(filename)[1].lower()
-            return ext in ALLOWED_EXTENSIONS
+            return any(filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
 
         async def process_and_add_file(file_path_or_name: str):
 

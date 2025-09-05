@@ -16,7 +16,7 @@ class DataSourceService:
         self.config_service = ConfigDatabaseService(db_path)
         self.config = get_config()
         self._cache = {}
-        self._cache_timeout = 600  
+        self._cache_timeout = 300  
         
     def get_current_database_type(self) -> str:
         """获取当前配置的数据库类型"""
@@ -30,7 +30,15 @@ class DataSourceService:
     
     # 直接代理到 config_service，移除不必要的异常处理
     async def get_all_data_sources(self) -> Dict[str, Any]:
-        return await self.config_service.get_all_data_sources()
+        cache_key = "all_data_sources"
+        now = time.time()
+        
+        if (cache_key in self._cache and 
+            now - self._cache[cache_key]['timestamp'] < self._cache_timeout):
+            return self._cache[cache_key]['data']
+        data = await self.config_service.get_all_data_sources()
+        self._cache[cache_key] = {'data': data, 'timestamp': now}
+        return data
     
     async def get_data_source(self, name: str) -> Optional[Dict[str, Any]]:
         return await self.config_service.get_data_source(name)
