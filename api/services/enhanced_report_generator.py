@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import re
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from taskweaver.memory.attachment import AttachmentType
 from taskweaver.llm import LLMApi, format_chat_message
 from session_manager import SessionManager
@@ -56,6 +58,8 @@ class EnhancedReportGenerator:
         self.session_manager = session_manager
         self.llm_api: Optional[LLMApi] = None
         self.analysis_results: Optional[DataAnalysisResults] = None
+        # 创建专用的LLM操作线程池
+        self.llm_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm_ops")
     
     def _get_llm_api_from_session(self) -> Optional[LLMApi]:
         """从session中获取LLM API实例"""
@@ -128,8 +132,8 @@ class EnhancedReportGenerator:
                     findings = self._extract_insights_from_text(post.message)
                     results['key_findings'].extend(findings)
         
-        # 生成业务洞察和建议
-        business_insights, recommendations = await self._generate_insights_and_recommendations(results)
+        # 异步生成业务洞察和建议
+        business_insights, recommendations = await self._generate_insights_and_recommendations_async(results)
         
         return DataAnalysisResults(
             datasets_analyzed=results['datasets_analyzed'],
@@ -279,8 +283,21 @@ class EnhancedReportGenerator:
         
         return insights
     
-    async def _generate_insights_and_recommendations(self, results: Dict) -> tuple[List[str], List[str]]:
-        """生成业务洞察和建议"""
+    def _sync_llm_call(self, messages: List[Dict], **kwargs) -> Dict[str, Any]:
+        """同步LLM调用"""
+        try:
+            return self.llm_api.chat_completion(
+                messages=messages,
+                stream=False,
+                temperature=kwargs.get('temperature', 0.3),
+                max_tokens=kwargs.get('max_tokens', 800)
+            )
+        except Exception as e:
+            print(f"LLM调用失败: {e}")
+            return {'content': ''}
+    
+    async def _generate_insights_and_recommendations_async(self, results: Dict) -> tuple[List[str], List[str]]:
+        """异步生成业务洞察和建议"""
         if not self.llm_api or not (results['execution_outputs'] or results['key_findings']):
             return self._generate_rule_based_insights(results)
         
@@ -308,7 +325,7 @@ class EnhancedReportGenerator:
         if len(context.strip()) < 50:
             return self._generate_rule_based_insights(results)
         
-        # LLM生成
+        # 异步LLM生成
         prompt = f"""
 作为数据分析师，基于以下分析结果提供业务洞察和建议：
 
@@ -323,12 +340,14 @@ class EnhancedReportGenerator:
         
         try:
             messages = [format_chat_message("user", prompt)]
-            # 使用同步方法而不是async方法
-            response = self.llm_api.chat_completion(
-                messages=messages,
-                stream=False,
-                temperature=0.3,
-                max_tokens=800
+            
+            # 在线程池中执行同步LLM调用
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                self.llm_executor,
+                self._sync_llm_call,
+                messages,
+                {'temperature': 0.3, 'max_tokens': 800}
             )
             
             content = response.get('content', '').strip()
@@ -344,7 +363,7 @@ class EnhancedReportGenerator:
             return result.get('insights', []), result.get('recommendations', [])
             
         except Exception as e:
-            print(f"LLM生成失败: {e}")
+            print(f"异步LLM生成失败: {e}")
             return self._generate_rule_based_insights(results)
     
     def _generate_rule_based_insights(self, results: Dict) -> tuple[List[str], List[str]]:
@@ -477,48 +496,52 @@ class EnhancedReportGenerator:
         parts = []
         stats_by_type = {}
         
+        # 按类型分组统计结果
         for stat in self.analysis_results.statistical_results:
-            if isinstance(stat, dict):
-                stat_type = stat.get('metric', 'other')
-                stats_by_type.setdefault(stat_type, []).append(stat)
+            metric = stat.get('metric', 'unknown')
+            if metric not in stats_by_type:
+                stats_by_type[metric] = []
+            stats_by_type[metric].append(stat)
         
-        type_names = {
-            'mean': '平均值分析', 'median': '中位数分析', 'std': '标准差分析',
-            'min': '最小值', 'max': '最大值', 'other': '其他统计指标'
-        }
+        # 生成统计摘要
+        for metric, stats in stats_by_type.items():
+            values = [s.get('value', 0) for s in stats]
+            if values:
+                parts.extend([
+                    f"**{metric.upper()}**: {', '.join(map(str, values))}",
+                    ""
+                ])
         
-        for stat_type, stats in stats_by_type.items():
-            type_name = type_names.get(stat_type, stat_type)
-            parts.append(f"### {type_name}")
-            for stat in stats:
-                if 'value' in stat:
-                    parts.append(f"- 数值: **{stat['value']:.4f}**")
-            parts.append("")
-        
-        return "\n".join(parts)
+        return "\n".join(parts) if parts else "暂无统计分析结果。"
     
     def _generate_technical_appendix(self) -> str:
         """生成技术附录"""
         results = self.analysis_results
-        parts = []
+        parts = ["### 使用的工具和方法", ""]
         
-        if results.methods_used:
-            parts.extend(["### 使用的工具和方法"] + [f"- {method}" for method in results.methods_used] + [""])
+        if self.analysis_results.methods_used:
+            parts.append("**数据处理库**:")
+            for method in sorted(set(self.analysis_results.methods_used)):
+                parts.append(f"- {method}")
+            parts.append("")
         
-        if results.code_snippets:
-            parts.append("### 关键代码片段")
-            for i, snippet in enumerate(results.code_snippets[:2], 1):
+        if self.analysis_results.code_snippets:
+            parts.extend(["### 关键代码片段", ""])
+            for i, snippet in enumerate(self.analysis_results.code_snippets[:3], 1):
+                code = snippet.get('code', '').strip()
+                if len(code) > 500:
+                    code = code[:500] + "..."
                 parts.extend([
                     f"**代码片段 {i}**:",
                     "```python",
-                    snippet.get('code', '')[:300],
+                    code,
                     "```",
                     ""
                 ])
         
-        if results.visualizations:
-            parts.extend(["### 数据可视化"] + 
-                        [f"**图表 {i}**: {viz.get('description', '数据可视化')}" 
-                         for i, viz in enumerate(results.visualizations, 1)] + [""])
-        
         return "\n".join(parts)
+    
+    def __del__(self):
+        """清理资源"""
+        if hasattr(self, 'llm_executor'):
+            self.llm_executor.shutdown(wait=False)

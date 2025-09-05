@@ -82,9 +82,11 @@ class Config:
         
     def get_data_sources(self) -> Dict[str, Any]:
         """获取数据源配置 - 从SQLite数据库读取"""
+        import asyncio
         from services.config_database_service import ConfigDatabaseService
         config_service = ConfigDatabaseService(self.config_db_path)
-        return config_service.get_all_data_sources()
+        # 修复：使用 asyncio.run 来运行异步方法
+        return asyncio.run(config_service.get_all_data_sources())
         
     def get_api_keys(self) -> Dict[str, str]:
         """获取API密钥配置"""

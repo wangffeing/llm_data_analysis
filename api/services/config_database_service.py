@@ -1,12 +1,15 @@
 import sqlite3
 import json
+import asyncio
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 from datetime import datetime
 
 class ConfigDatabaseService:
     """
     配置数据库服务类
-    提供从SQLite数据库读取和管理配置数据的功能
+    提供从SQLite数据库读取和管理配置数据的异步功能
     """
     
     def __init__(self, db_path=None):
@@ -18,6 +21,8 @@ class ConfigDatabaseService:
             config = get_config()
             db_path = config.config_db_path
         self.db_path = db_path
+        # 创建专用的数据库操作线程池
+        self.db_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="db_ops")
     
     def get_connection(self):
         """获取数据库连接"""
@@ -38,87 +43,90 @@ class ConfigDatabaseService:
         except (KeyError, IndexError):
             return default
 
-    def get_all_data_sources(self) -> Dict:
-        """获取所有数据源配置"""
+    # 在 ConfigDatabaseService 中优化查询
+    # 优化数据库查询方法
+    def _sync_get_all_data_sources(self) -> Dict:
+        """优化：使用单个查询获取所有数据，避免 N+1 问题"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 修改：移除 GROUP_CONCAT 中的 ORDER BY
+            # 使用单个优化查询
             cursor.execute('''
-                SELECT ds.*, 
-                       GROUP_CONCAT(dsc.column_name) as columns,
-                       GROUP_CONCAT(dsc.column_display_name) as column_names
+                SELECT ds.source_key, ds.table_name, ds.table_des, ds.table_order, ds.database_type,
+                       dsc.column_name, dsc.column_display_name, dsc.column_order
                 FROM data_sources ds
                 LEFT JOIN data_source_columns dsc ON ds.id = dsc.source_id
-                GROUP BY ds.id
-                ORDER BY ds.source_key
+                ORDER BY ds.source_key, dsc.column_order
             ''')
             
             sources = {}
             for row in cursor.fetchall():
-                # 获取列信息并手动排序
-                cursor.execute('''
-                    SELECT column_name, column_display_name 
-                    FROM data_source_columns 
-                    WHERE source_id = ? 
-                    ORDER BY column_order
-                ''', (row['id'],))
+                source_key = row['source_key']
                 
-                columns_data = cursor.fetchall()
-                table_columns = [col['column_name'] for col in columns_data]
-                table_columns_names = [col['column_display_name'] for col in columns_data]
+                if source_key not in sources:
+                    sources[source_key] = {
+                        'table_name': row['table_name'],
+                        'table_des': row['table_des'],
+                        'table_order': row['table_order'],
+                        'table_columns': [],
+                        'table_columns_names': [],
+                        'database_type': self._safe_get(row, 'database_type', 'unknown')
+                    }
                 
-                sources[row['source_key']] = {
-                    'table_name': row['table_name'],
-                    'table_des': row['table_des'],
-                    'table_order': row['table_order'],
-                    'table_columns': table_columns,
-                    'table_columns_names': table_columns_names,
-                    'database_type': self._safe_get(row, 'database_type', 'unknown')
-                }
+                if row['column_name']:  # 避免空列
+                    sources[source_key]['table_columns'].append(row['column_name'])
+                    sources[source_key]['table_columns_names'].append(row['column_display_name'])
             
             return sources
     
-    def get_data_source(self, source_key: str) -> Optional[Dict]:
-        """获取单个数据源配置"""
-        sources = self.get_all_data_sources()
-        return sources.get(source_key)
+    async def get_all_data_sources(self) -> Dict:
+        """异步获取所有数据源配置"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_get_all_data_sources)
     
-    def add_data_source(self, source_key: str, table_name: str, table_des: str = "", 
-                       table_order: str = "", table_columns: List[str] = None, 
-                       table_columns_names: List[str] = None, database_type: str = "unknown") -> bool:
-        """添加新的数据源配置"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # 插入数据源基本信息，包含数据库类型
-                cursor.execute('''
-                    INSERT INTO data_sources 
-                    (source_key, table_name, table_des, table_order, database_type, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (source_key, table_name, table_des, table_order, database_type, datetime.now(), datetime.now()))
-                
-                source_id = cursor.lastrowid
-                
-                # 插入列配置
-                if table_columns:
-                    for i, column_name in enumerate(table_columns):
-                        display_name = table_columns_names[i] if table_columns_names and i < len(table_columns_names) else column_name
-                        cursor.execute('''
-                            INSERT INTO data_source_columns 
-                            (source_id, column_name, column_display_name, column_order)
-                            VALUES (?, ?, ?, ?)
-                        ''', (source_id, column_name, display_name, i + 1))
-                
-                conn.commit()
-                return True
-        except Exception as e:
-            print(f"添加数据源失败: {e}")
-            return False
+    # 添加单个数据源查询方法
+    def _sync_get_single_data_source(self, source_key: str) -> Optional[Dict]:
+        """优化：直接查询单个数据源，避免获取全部数据"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 查询数据源基本信息
+            cursor.execute('''
+                SELECT source_key, table_name, table_des, table_order, database_type
+                FROM data_sources 
+                WHERE source_key = ?
+            ''', (source_key,))
+            source_row = cursor.fetchone()
+            if not source_row:
+                return None
+            
+            # 查询列信息
+            cursor.execute('''
+                SELECT dsc.column_name, dsc.column_display_name
+                FROM data_sources ds
+                JOIN data_source_columns dsc ON ds.id = dsc.source_id
+                WHERE ds.source_key = ?
+                ORDER BY dsc.column_order
+            ''', (source_key,))
+            columns_data = cursor.fetchall()
+            
+            return {
+                'table_name': source_row['table_name'],
+                'table_des': source_row['table_des'],
+                'table_order': source_row['table_order'],
+                'table_columns': [col['column_name'] for col in columns_data],
+                'table_columns_names': [col['column_display_name'] for col in columns_data],
+                'database_type': self._safe_get(source_row, 'database_type', 'unknown')
+            }
     
-    def update_data_source(self, source_key: str, **kwargs) -> bool:
-        """更新数据源配置"""
+    async def get_data_source(self, source_key: str) -> Optional[Dict]:
+        """优化：直接查询单个数据源"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_get_single_data_source, source_key)
+    
+    # 修复删除方法，添加级联删除
+    def _sync_delete_data_source(self, source_key: str) -> bool:
+        """修复：添加级联删除"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -131,62 +139,26 @@ class ConfigDatabaseService:
                 
                 source_id = row['id']
                 
-                # 更新基本信息，包含数据库类型
-                update_fields = []
-                update_values = []
+                # 删除相关列配置
+                cursor.execute('DELETE FROM data_source_columns WHERE source_id = ?', (source_id,))
                 
-                for field in ['table_name', 'table_des', 'table_order', 'database_type']:
-                    if field in kwargs:
-                        update_fields.append(f"{field} = ?")
-                        update_values.append(kwargs[field])
-                
-                if update_fields:
-                    update_fields.append("updated_at = ?")
-                    update_values.append(datetime.now())
-                    update_values.append(source_key)
-                    
-                    cursor.execute(f'''
-                        UPDATE data_sources 
-                        SET {', '.join(update_fields)}
-                        WHERE source_key = ?
-                    ''', update_values)
-                
-                # 更新列配置
-                if 'table_columns' in kwargs:
-                    cursor.execute('DELETE FROM data_source_columns WHERE source_id = ?', (source_id,))
-                    
-                    table_columns = kwargs['table_columns']
-                    table_columns_names = kwargs.get('table_columns_names', [])
-                    
-                    for i, column_name in enumerate(table_columns):
-                        display_name = table_columns_names[i] if i < len(table_columns_names) else column_name
-                        cursor.execute('''
-                            INSERT INTO data_source_columns 
-                            (source_id, column_name, column_display_name, column_order)
-                            VALUES (?, ?, ?, ?)
-                        ''', (source_id, column_name, display_name, i + 1))
+                # 删除数据源
+                cursor.execute('DELETE FROM data_sources WHERE source_key = ?', (source_key,))
                 
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"更新数据源失败: {e}")
-            return False
-    
-    def delete_data_source(self, source_key: str) -> bool:
-        """删除数据源配置"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM data_sources WHERE source_key = ?', (source_key,))
-                conn.commit()
-                return cursor.rowcount > 0
-        except Exception as e:
             print(f"删除数据源失败: {e}")
             return False
+
+    async def delete_data_source(self, source_key: str) -> bool:
+        """异步删除数据源配置"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_delete_data_source, source_key)
     
-    def get_data_sources_by_database_type(self, database_type: str) -> Dict:
-        """根据数据库类型获取数据源"""
-        all_sources = self.get_all_data_sources()
+    async def get_data_sources_by_database_type(self, database_type: str) -> Dict:
+        """异步根据数据库类型获取数据源"""
+        all_sources = await self.get_all_data_sources()
         filtered_sources = {}
         
         for key, config in all_sources.items():
@@ -195,15 +167,20 @@ class ConfigDatabaseService:
         
         return filtered_sources
     
-    def get_available_database_types(self) -> List[str]:
-        """获取所有可用的数据库类型"""
+    def _sync_get_available_database_types(self) -> List[str]:
+        """同步获取所有可用的数据库类型"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT DISTINCT database_type FROM data_sources WHERE database_type IS NOT NULL')
             return [row[0] for row in cursor.fetchall()]
 
-    def get_all_templates(self) -> Dict:
-        """获取所有模板配置"""
+    async def get_available_database_types(self) -> List[str]:
+        """异步获取所有可用的数据库类型"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_get_available_database_types)
+
+    def _sync_get_all_templates(self) -> Dict:
+        """同步获取所有模板配置"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -267,15 +244,20 @@ class ConfigDatabaseService:
                 }
             
             return templates
+
+    async def get_all_templates(self) -> Dict:
+        """异步获取所有模板配置"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_get_all_templates)
     
-    def get_template(self, template_id: str) -> Optional[Dict]:
-        """获取单个模板配置"""
-        templates = self.get_all_templates()
+    async def get_template(self, template_id: str) -> Optional[Dict]:
+        """异步获取单个模板配置"""
+        templates = await self.get_all_templates()
         return templates.get(template_id)
     
-    def get_data_sources_list(self) -> List[Dict]:
-        """获取数据源列表（用于API返回）"""
-        sources = self.get_all_data_sources()
+    async def get_data_sources_list(self) -> List[Dict]:
+        """异步获取数据源列表（用于API返回）"""
+        sources = await self.get_all_data_sources()
         return [
             {
                 'key': key,
@@ -283,14 +265,14 @@ class ConfigDatabaseService:
                 'table_name': config['table_name'],
                 'description': config['table_des'],
                 'columns_count': len(config['table_columns']),
-                'database_type': config.get('database_type', 'unknown')  # 这里使用普通字典的 .get() 方法
+                'database_type': config.get('database_type', 'unknown')
             }
             for key, config in sources.items()
         ]
     
-    def get_templates_list(self) -> List[Dict]:
-        """获取模板列表（用于API返回）"""
-        templates = self.get_all_templates()
+    async def get_templates_list(self) -> List[Dict]:
+        """异步获取模板列表（用于API返回）"""
+        templates = await self.get_all_templates()
         return [
             {
                 'id': template_id,
@@ -300,9 +282,9 @@ class ConfigDatabaseService:
             for template_id, config in templates.items()
         ]
     
-    def search_data_sources(self, keyword: str) -> Dict:
-        """搜索数据源"""
-        all_sources = self.get_all_data_sources()
+    async def search_data_sources(self, keyword: str) -> Dict:
+        """异步搜索数据源"""
+        all_sources = await self.get_all_data_sources()
         filtered_sources = {}
         
         keyword_lower = keyword.lower()
@@ -314,8 +296,8 @@ class ConfigDatabaseService:
         
         return filtered_sources
     
-    def get_database_stats(self) -> Dict:
-        """获取数据库统计信息"""
+    def _sync_get_database_stats(self) -> Dict:
+        """同步获取数据库统计信息"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -339,3 +321,108 @@ class ConfigDatabaseService:
                 'database_path': self.db_path,
                 'database_type_stats': db_type_stats
             }
+
+    async def get_database_stats(self) -> Dict:
+        """异步获取数据库统计信息"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.db_executor, self._sync_get_database_stats)
+    
+    def __del__(self):
+        """清理资源"""
+        if hasattr(self, 'db_executor'):
+            self.db_executor.shutdown(wait=False)
+
+    def _sync_add_data_source(self, source_key: str, table_name: str, table_des: str, table_order: str, table_columns: List[str], table_columns_names: List[str], database_type: str = "unknown") -> bool:
+        """同步添加数据源配置"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 插入数据源基本信息
+                cursor.execute('''
+                    INSERT INTO data_sources (source_key, table_name, table_des, table_order, database_type, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (source_key, table_name, table_des, table_order, database_type, datetime.now().isoformat()))
+                
+                source_id = cursor.lastrowid
+                
+                # 插入列信息
+                for i, (column_name, column_display_name) in enumerate(zip(table_columns, table_columns_names)):
+                    cursor.execute('''
+                        INSERT INTO data_source_columns (source_id, column_name, column_display_name, column_order)
+                        VALUES (?, ?, ?, ?)
+                    ''', (source_id, column_name, column_display_name, i))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"添加数据源失败: {e}")
+            return False
+
+    async def add_data_source(self, source_key: str, table_name: str, table_des: str, table_order: str, table_columns: List[str], table_columns_names: List[str], database_type: str = "unknown") -> bool:
+        """异步添加数据源配置"""
+        loop = asyncio.get_event_loop()
+        func = partial(self._sync_add_data_source, source_key, table_name, table_des, table_order, table_columns, table_columns_names, database_type)
+        return await loop.run_in_executor(self.db_executor, func)
+
+    def _sync_update_data_source(self, source_key: str, table_name: str = None, table_des: str = None, table_order: str = None, table_columns: List[str] = None, table_columns_names: List[str] = None, database_type: str = None) -> bool:
+        """同步更新数据源配置"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 检查数据源是否存在
+                cursor.execute('SELECT id FROM data_sources WHERE source_key = ?', (source_key,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                
+                source_id = row['id']
+                
+                # 构建更新SQL
+                update_fields = []
+                update_values = []
+                
+                if table_name is not None:
+                    update_fields.append('table_name = ?')
+                    update_values.append(table_name)
+                if table_des is not None:
+                    update_fields.append('table_des = ?')
+                    update_values.append(table_des)
+                if table_order is not None:
+                    update_fields.append('table_order = ?')
+                    update_values.append(table_order)
+                if database_type is not None:
+                    update_fields.append('database_type = ?')
+                    update_values.append(database_type)
+                
+                if update_fields:
+                    cursor.execute(f'''
+                        UPDATE data_sources 
+                        SET {', '.join(update_fields)}, updated_at = ?
+                        WHERE source_key = ?
+                    ''', update_values + [datetime.now().isoformat(), source_key])
+                
+                # 更新列信息（如果提供）
+                if table_columns is not None and table_columns_names is not None:
+                    # 删除现有列配置
+                    cursor.execute('DELETE FROM data_source_columns WHERE source_id = ?', (source_id,))
+                    
+                    # 插入新的列配置
+                    for i, (column_name, column_display_name) in enumerate(zip(table_columns, table_columns_names)):
+                        cursor.execute('''
+                            INSERT INTO data_source_columns (source_id, column_name, column_display_name, column_order)
+                            VALUES (?, ?, ?, ?)
+                        ''', (source_id, column_name, column_display_name, i))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"更新数据源失败: {e}")
+            return False
+
+    async def update_data_source(self, source_key: str, **kwargs) -> bool:
+        """异步更新数据源配置"""
+        loop = asyncio.get_event_loop()
+        func = partial(self._sync_update_data_source, source_key, **kwargs)
+        return await loop.run_in_executor(self.db_executor, func)

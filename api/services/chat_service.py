@@ -238,7 +238,7 @@ class ChatService:
     
         if message.selected_table:
             # 使用数据源服务获取数据源信息
-            data_sources = self.data_source_service.get_all_data_sources()
+            data_sources = await self.data_source_service.get_all_data_sources()
             if message.selected_table not in data_sources:
                 await self.sse_service.send_message(session_id, SSEMessageType.ERROR, {
                     "error": "选择的数据源不存在"

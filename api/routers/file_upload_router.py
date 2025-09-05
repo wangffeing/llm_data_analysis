@@ -3,6 +3,8 @@ import os
 import uuid
 import magic
 import pandas as pd
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from typing import List
 from auth import verify_admin_permission
@@ -11,7 +13,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# 创建线程池执行器
+file_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="file_ops")
 
 # 安全配置
 ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.json', '.txt'}
@@ -24,16 +28,20 @@ ALLOWED_MIME_TYPES = {
     '.txt': ['text/plain', 'text/csv']
 }
 
-def is_safe_file(content: bytes, file_extension: str) -> bool:
-    """验证文件内容是否安全"""
+async def is_safe_file_async(content: bytes, file_extension: str) -> bool:
+    """异步验证文件内容是否安全"""
     try:
         # 检查文件大小
         if len(content) == 0:
             return False
         
-        # 使用 python-magic 检查真实文件类型
+        # 在线程池中执行MIME类型检查
+        loop = asyncio.get_event_loop()
         try:
-            mime_type = magic.from_buffer(content, mime=True)
+            mime_type = await loop.run_in_executor(
+                file_executor, 
+                lambda: magic.from_buffer(content, mime=True)
+            )
             if mime_type not in ALLOWED_MIME_TYPES.get(file_extension, []):
                 logger.warning(f"文件MIME类型不匹配: 期望{ALLOWED_MIME_TYPES.get(file_extension)}, 实际{mime_type}")
                 return False
@@ -55,11 +63,11 @@ def is_safe_file(content: bytes, file_extension: str) -> bool:
         
         # 针对不同文件类型进行特定验证
         if file_extension in ['.csv', '.txt']:
-            return _validate_text_file(content)
+            return await _validate_text_file_async(content)
         elif file_extension in ['.xlsx', '.xls']:
-            return _validate_excel_file(content)
+            return await _validate_excel_file_async(content)
         elif file_extension == '.json':
-            return _validate_json_file(content)
+            return await _validate_json_file_async(content)
         
         return True
         
@@ -67,37 +75,49 @@ def is_safe_file(content: bytes, file_extension: str) -> bool:
         logger.error(f"文件安全检查失败: {e}")
         return False
 
-def _validate_text_file(content: bytes) -> bool:
-    """验证文本文件"""
-    try:
-        # 尝试解码为UTF-8
-        text_content = content.decode('utf-8', errors='strict')
-        # 检查是否包含过多的二进制字符
-        non_printable_ratio = sum(1 for c in text_content if ord(c) < 32 and c not in '\t\n\r') / len(text_content)
-        return non_printable_ratio < 0.1  # 非打印字符比例不超过10%
-    except UnicodeDecodeError:
-        return False
+async def _validate_text_file_async(content: bytes) -> bool:
+    """异步验证文本文件"""
+    def _sync_validate_text(content: bytes) -> bool:
+        try:
+            # 尝试解码为UTF-8
+            text_content = content.decode('utf-8', errors='strict')
+            # 检查是否包含过多的二进制字符
+            non_printable_ratio = sum(1 for c in text_content if ord(c) < 32 and c not in '\t\n\r') / len(text_content)
+            return non_printable_ratio < 0.1  # 非打印字符比例不超过10%
+        except UnicodeDecodeError:
+            return False
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(file_executor, _sync_validate_text, content)
 
-def _validate_excel_file(content: bytes) -> bool:
-    """验证Excel文件"""
-    try:
-        # 简单检查Excel文件头
-        excel_signatures = [
-            b'\x50\x4B\x03\x04',  # XLSX (ZIP based)
-            b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'  # XLS (OLE2 based)
-        ]
-        return any(content.startswith(sig) for sig in excel_signatures)
-    except Exception:
-        return False
+async def _validate_excel_file_async(content: bytes) -> bool:
+    """异步验证Excel文件"""
+    def _sync_validate_excel(content: bytes) -> bool:
+        try:
+            # 简单检查Excel文件头
+            excel_signatures = [
+                b'\x50\x4B\x03\x04',  # XLSX (ZIP based)
+                b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'  # XLS (OLE2 based)
+            ]
+            return any(content.startswith(sig) for sig in excel_signatures)
+        except Exception:
+            return False
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(file_executor, _sync_validate_excel, content)
 
-def _validate_json_file(content: bytes) -> bool:
-    """验证JSON文件"""
-    try:
-        import json
-        json.loads(content.decode('utf-8'))
-        return True
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return False
+async def _validate_json_file_async(content: bytes) -> bool:
+    """异步验证JSON文件"""
+    def _sync_validate_json(content: bytes) -> bool:
+        try:
+            import json
+            json.loads(content.decode('utf-8'))
+            return True
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return False
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(file_executor, _sync_validate_json, content)
 
 def sanitize_filename(filename: str) -> str:
     """清理文件名，移除危险字符"""
@@ -109,13 +129,41 @@ def sanitize_filename(filename: str) -> str:
     # 限制长度
     return filename[:100]
 
+async def _ensure_upload_dir_async() -> None:
+    """异步确保上传目录存在"""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        file_executor,
+        lambda: os.makedirs(UPLOAD_DIR, exist_ok=True)
+    )
+
+async def _write_file_async(file_path: str, content: bytes) -> None:
+    """异步写入文件"""
+    def _sync_write_file(path: str, data: bytes) -> None:
+        with open(path, "wb") as f:
+            f.write(data)
+    
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(file_executor, _sync_write_file, file_path, content)
+
+async def _verify_file_async(file_path: str, expected_size: int) -> bool:
+    """异步验证保存的文件"""
+    def _sync_verify_file(path: str, size: int) -> bool:
+        return os.path.exists(path) and os.path.getsize(path) == size
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(file_executor, _sync_verify_file, file_path, expected_size)
+
 @router.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...)
 ):
-    """安全的文件上传"""
+    """异步安全的文件上传"""
     try:
         uploaded_files = []
+        
+        # 异步确保上传目录存在
+        await _ensure_upload_dir_async()
         
         for file in files:
             # 验证文件名
@@ -132,7 +180,7 @@ async def upload_files(
             #         status_code=400,
             #         detail=f"不支持的文件类型: {file_extension}。支持的类型: {', '.join(ALLOWED_EXTENSIONS)}"
             #     )
-            #
+            
             # 读取文件内容
             content = await file.read()
             
@@ -143,8 +191,8 @@ async def upload_files(
                     detail=f"文件过大: {len(content)} bytes。最大允许: {MAX_FILE_SIZE} bytes"
                 )
             
-            # 验证文件内容安全性
-            # if not is_safe_file(content, file_extension):
+            # 异步验证文件内容安全性
+            # if not await is_safe_file_async(content, file_extension):
             #     raise HTTPException(status_code=400, detail="文件内容不安全或格式无效")
             
             # 生成安全的文件名
@@ -152,15 +200,11 @@ async def upload_files(
             saved_filename = f"{file_id}{file_extension}"
             file_path = os.path.join(UPLOAD_DIR, saved_filename)
             
-            # 确保上传目录存在且安全
-            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            # 异步保存文件
+            await _write_file_async(file_path, content)
             
-            # 保存文件
-            with open(file_path, "wb") as f:
-                f.write(content)
-            
-            # 验证保存的文件
-            if not os.path.exists(file_path) or os.path.getsize(file_path) != len(content):
+            # 异步验证保存的文件
+            if not await _verify_file_async(file_path, len(content)):
                 raise HTTPException(status_code=500, detail="文件保存失败")
                         
             uploaded_files.append({
@@ -182,10 +226,9 @@ async def upload_files(
         logger.error(f"文件上传失败: {e}")
         raise HTTPException(status_code=500, detail="文件上传处理失败")
 
-@router.get("/files")
-async def list_uploaded_files(_: bool = Depends(verify_admin_permission)):
-    """列出已上传的文件（需要管理员权限）"""
-    try:
+async def _list_files_async() -> List[dict]:
+    """异步列出文件"""
+    def _sync_list_files() -> List[dict]:
         files = []
         for filename in os.listdir(UPLOAD_DIR):
             file_path = os.path.join(UPLOAD_DIR, filename)
@@ -196,6 +239,16 @@ async def list_uploaded_files(_: bool = Depends(verify_admin_permission)):
                     "size": os.path.getsize(file_path),
                     "modified_time": os.path.getmtime(file_path)
                 })
+        return files
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(file_executor, _sync_list_files)
+
+@router.get("/files")
+async def list_uploaded_files(_: bool = Depends(verify_admin_permission)):
+    """异步列出已上传的文件（需要管理员权限）"""
+    try:
+        files = await _list_files_async()
         return {"files": files, "total_count": len(files)}
     except Exception as e:
         logger.error(f"获取文件列表失败: {e}")

@@ -1,4 +1,3 @@
-import json
 import math
 import numpy as np
 import pandas as pd
@@ -43,24 +42,22 @@ def get_data_source_service() -> DataSourceService:
 
 @router.get("/sources", response_model=DataSourcesResponse)
 async def get_data_sources(
-    database_type: Optional[str] = Query(None, description="按数据库类型过滤"),
-    current_only: bool = Query(False, description="只显示当前数据库类型的数据源"),
+    database_type: Optional[str] = Query(None),
+    current_only: bool = Query(False),
     service: DataSourceService = Depends(get_data_source_service)
 ):
-    """获取所有数据源"""
     try:
-        # 根据参数决定获取哪些数据源
+        # 简化：直接使用服务层返回的格式
         if current_only:
-            data_sources_dict = service.get_data_sources_by_current_db_type()
+            data_sources_dict = await service.get_data_sources_by_current_db_type()
         elif database_type:
-            data_sources_dict = service.config_service.get_data_sources_by_database_type(database_type)
+            data_sources_dict = await service.config_service.get_data_sources_by_database_type(database_type)
         else:
-            data_sources_dict = service.get_all_data_sources()
+            data_sources_dict = await service.get_all_data_sources()
         
-        data_sources_list = []
-        
-        for name, config in data_sources_dict.items():
-            data_sources_list.append({
+        # 优化：减少不必要的数据转换
+        data_sources_list = [
+            {
                 "name": name,
                 "table_name": config["table_name"],
                 "description": config["table_des"],
@@ -68,11 +65,13 @@ async def get_data_sources(
                 "table_columns_names": config["table_columns_names"],
                 "table_order": config["table_order"],
                 "database_type": config.get("database_type", "unknown")
-            })
+            }
+            for name, config in data_sources_dict.items()
+        ]
         
         # 获取当前数据库类型和可用类型
         current_db_type = service.get_current_database_type()
-        available_types = service.get_available_database_types()
+        available_types = await service.get_available_database_types()
         
         return DataSourcesResponse(
             data_sources=data_sources_list,
@@ -87,12 +86,13 @@ async def get_data_sources(
 async def create_data_source(
     request: DataSourceCreateRequest,
     service: DataSourceService = Depends(get_data_source_service),
-    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
+    _: bool = Depends(verify_admin_permission_cookie)
 ):
     """创建数据源"""
     try:
-        # 检查数据源是否已存在
-        if service.get_data_source(request.name):
+        # 修复：使用异步调用
+        existing_source = await service.get_data_source(request.name)
+        if existing_source:
             raise HTTPException(status_code=400, detail="数据源已存在")
         
         config = {
@@ -101,10 +101,10 @@ async def create_data_source(
             "table_order": request.table_order,
             "table_columns": request.table_columns,
             "table_columns_names": request.table_columns_names,
-            "database_type": request.database_type  # 添加数据库类型
+            "database_type": request.database_type
         }
         
-        success = service.add_data_source(request.name, config)
+        success = await service.add_data_source(request.name, config)
         if success:
             return {"success": True, "message": "数据源创建成功"}
         else:
@@ -119,12 +119,13 @@ async def update_data_source(
     source_name: str,
     request: DataSourceUpdateRequest,
     service: DataSourceService = Depends(get_data_source_service),
-    _: bool = Depends(verify_admin_permission_cookie)  # 使用 cookie 认证
+    _: bool = Depends(verify_admin_permission_cookie)
 ):
     """更新数据源"""
     try:
-        # 检查数据源是否存在
-        if not service.get_data_source(source_name):
+        # 修复：使用异步调用
+        existing_source = await service.get_data_source(source_name)
+        if not existing_source:
             raise HTTPException(status_code=404, detail="数据源不存在")
         
         config = {
@@ -133,10 +134,10 @@ async def update_data_source(
             "table_order": request.table_order,
             "table_columns": request.table_columns,
             "table_columns_names": request.table_columns_names,
-            "database_type": request.database_type  # 添加数据库类型
+            "database_type": request.database_type
         }
         
-        success = service.update_data_source(source_name, config)
+        success = await service.update_data_source(source_name, config)
         if success:
             return {"success": True, "message": "数据源更新成功"}
         else:
@@ -154,7 +155,7 @@ async def delete_data_source(
 ):
     """删除数据源"""
     try:
-        success = service.delete_data_source(source_name)
+        success = await service.delete_data_source(source_name)
         if success:
             return {"success": True, "message": "数据源删除成功"}
         else:
@@ -180,36 +181,29 @@ def clean_nan_values(data):
 @router.get("/sources/{source_name}/preview")
 async def get_data_preview(
     source_name: str, 
-    limit: int = 5,
+    limit: int = Query(5, ge=1, le=100),  # 添加参数验证
     service: DataSourceService = Depends(get_data_source_service)
 ):
     """获取数据源预览数据"""
     try:
-        # 获取数据源配置
-        source_config = service.get_data_source(source_name)
+        # 修复：使用异步调用
+        source_config = await service.get_data_source(source_name)
         if not source_config:
             raise HTTPException(status_code=404, detail="数据源不存在")
         
         table_name = source_config["table_name"]
         table_columns = ", ".join(source_config["table_columns"])
         
-        # 获取数据库管理器
         db_manager = get_db_manager()
-        
-        # 构建查询语句
         query = f"SELECT {table_columns} FROM {table_name} LIMIT {limit}"
         
-        # 执行查询 - 改为异步调用
         df = await db_manager.execute_query_to_dataframe(query)
         df.columns = source_config['table_columns']
 
-        # 转换为字典格式
         preview_data = df.to_dict('records')
-
-        # 清理 NaN 值
         cleaned_data = clean_nan_values(preview_data)
         
-        response_data = {
+        return {
             "source_name": source_name,
             "table_name": table_name,
             "database_type": source_config.get("database_type", "unknown"),
@@ -218,8 +212,6 @@ async def get_data_preview(
             "data": cleaned_data,
             "total_rows": len(cleaned_data)
         }
-        
-        return response_data
     except HTTPException:
         raise
     except Exception as e:
