@@ -127,12 +127,12 @@ async def upload_files(
             
             # 验证文件扩展名
             file_extension = os.path.splitext(safe_filename)[1].lower()
-            if file_extension not in ALLOWED_EXTENSIONS:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"不支持的文件类型: {file_extension}。支持的类型: {', '.join(ALLOWED_EXTENSIONS)}"
-                )
-            
+            # if file_extension not in ALLOWED_EXTENSIONS:
+            #     raise HTTPException(
+            #         status_code=400,
+            #         detail=f"不支持的文件类型: {file_extension}。支持的类型: {', '.join(ALLOWED_EXTENSIONS)}"
+            #     )
+            #
             # 读取文件内容
             content = await file.read()
             
@@ -144,8 +144,8 @@ async def upload_files(
                 )
             
             # 验证文件内容安全性
-            if not is_safe_file(content, file_extension):
-                raise HTTPException(status_code=400, detail="文件内容不安全或格式无效")
+            # if not is_safe_file(content, file_extension):
+            #     raise HTTPException(status_code=400, detail="文件内容不安全或格式无效")
             
             # 生成安全的文件名
             file_id = str(uuid.uuid4())

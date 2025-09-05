@@ -60,11 +60,12 @@ async def send_message(
     session_id = InputValidator.validate_session_id(session_id)
     
     # 验证消息内容
-    if len(message.content) > 10000:
+    if len(message.content
+           ) > 10000:
         raise HTTPException(status_code=400, detail="消息过长")
     
     # 清理消息内容
-    message.content = InputValidator.sanitize_string(message.content, 10000)
+    # message.content = InputValidator.sanitize_string(message.content, 10000)
     
     # 验证表名（如果提供）
     # if hasattr(message, 'selected_table') and message.selected_table:

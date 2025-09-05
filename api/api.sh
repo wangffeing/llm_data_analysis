@@ -95,7 +95,7 @@ case "$1" in
         ;;
     restart)
         stop_service
-        sleep 2
+        sleep 5
         start_service
         ;;
     status)

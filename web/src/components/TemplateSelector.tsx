@@ -24,7 +24,6 @@ interface TemplateSelectorProps {
   dataColumns?: string[];
 }
 
-// 🔧 优化1: 将模板卡片组件提取并使用 React.memo
 const TemplateCard = React.memo<{
   template: Template;
   compatibility: any;
@@ -100,9 +99,15 @@ const TemplateCard = React.memo<{
           
           {!compatibility.compatible && (
             <div style={{ marginTop: 8 }}>
-              <Tag color="red">
-                缺少: {compatibility.missingRequired.join(', ')}
-              </Tag>
+              <div style={{ 
+                padding: '8px', 
+                backgroundColor: '#f6f9ff', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                marginBottom: '8px' 
+              }}>
+                <Text type="warning">缺少: {compatibility.missingRequired.join(', ')}</Text>
+              </div>
             </div>
           )}
         </div>
