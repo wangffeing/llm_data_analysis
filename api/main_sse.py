@@ -9,17 +9,17 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
+# 导入配置并初始化日志
+from config import get_config
+config = get_config()
+
 # 导入依赖项和模块
 from dependencies import cleanup_dependencies, get_taskweaver_app, get_db_connection
 import dependencies as deps
 from services.sse_service import SSEService
 from routers import chat_router, session_router, data_source_router, system_router, file_upload_router, config_router, template_router, report_router
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 获取日志记录器（现在使用统一配置）
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager

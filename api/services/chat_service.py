@@ -69,7 +69,7 @@ class ChatService:
             
         except Exception as e:
             logger.error(f"[{session_id}] TaskWeaver会话错误: {e}")
-            if created_new and taskweaver_session:
+            if created_new :
                 await self._cleanup_taskweaver_session(session_data, session_id)
             raise
     
@@ -427,7 +427,7 @@ class ChatService:
                     #     await process_and_add_file(file_name)
 
             return final_response, files
-                        
+
         except Exception as e:
             logger.error(f"处理TaskWeaver响应失败: {e}")
             return final_response or "处理响应时出现错误", []

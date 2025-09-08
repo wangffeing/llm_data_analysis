@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -64,16 +65,25 @@ class Config:
         
         # 日志配置
         self.log_level = get_env_or_default('LOG_LEVEL', 'INFO')
-        self.log_file = get_env_or_default('LOG_FILE', None)
+        self.log_dir = get_env_or_default('LOG_DIR', os.path.join(os.path.dirname(__file__), 'logs'))
+        self.log_file = get_env_or_default('LOG_FILE', 'llm_dt_analysis.log')
+        self.log_max_bytes = int(get_env_or_default('LOG_MAX_BYTES', str(50 * 1024 * 1024)))
+        self.log_backup_count = int(get_env_or_default('LOG_BACKUP_COUNT', '5'))
+        self.log_format = get_env_or_default(
+            'LOG_FORMAT', 
+            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+        )
         
         # 安全配置
-        self.secret_key = get_env_or_default('SECRET_KEY', 'your-secret-key-change-in-production')
+        self.secret_key = get_env_or_default('SECRET_KEY', '**')
         self.allowed_hosts = get_env_or_default('ALLOWED_HOSTS', '*').split(',')
         
         # 文件上传配置
         self.max_upload_size = int(get_env_or_default('MAX_UPLOAD_SIZE', str(50 * 1024 * 1024)))  # 50MB
         self.upload_dir = get_env_or_default('UPLOAD_DIR', 'uploads')
         
+        self.setup_logging()
+
     def get_db_config(self) -> Dict[str, Any]:
         """获取数据库配置"""
         return {
@@ -133,11 +143,82 @@ class Config:
                 os.makedirs(self.upload_dir, exist_ok=True)
             except Exception as e:
                 errors.append(f"无法创建上传目录 {self.upload_dir}: {e}")
+
+        # 验证日志目录
+        if not os.path.exists(self.log_dir):
+            try:
+                os.makedirs(self.log_dir, exist_ok=True)
+            except Exception as e:
+                errors.append(f"无法创建日志目录 {self.log_dir}: {e}")
+
         
         if errors:
             raise ValueError(f"配置验证失败: {'; '.join(errors)}")
         
         return True
+    def setup_logging(self):
+        """设置统一的日志配置"""
+        # 确保日志目录存在
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        # 获取根日志记录器
+        root_logger = logging.getLogger()
+        
+        # 清除现有的处理器（避免重复配置）
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        # 设置日志级别
+        log_level = getattr(logging, self.log_level.upper(), logging.INFO)
+        root_logger.setLevel(log_level)
+        
+        # 创建格式化器
+        formatter = logging.Formatter(self.log_format)
+        
+        # 控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+        
+        # 文件处理器（带轮转）
+        from logging.handlers import RotatingFileHandler
+        
+        # 修复：正确构建日志文件路径
+        if os.path.isabs(self.log_file):
+            # 如果 log_file 是绝对路径，直接使用
+            log_file_path = self.log_file
+        else:
+            # 如果 log_file 是相对路径，与 log_dir 拼接
+            log_file_path = os.path.join(self.log_dir, self.log_file)
+                
+        # 确保日志文件的父目录存在
+        log_file_dir = os.path.dirname(log_file_path)
+        if log_file_dir and not os.path.exists(log_file_dir):
+            print(f"Creating log directory: {log_file_dir}")
+            os.makedirs(log_file_dir, exist_ok=True)
+        
+        # 验证路径是否正确
+        if os.path.isdir(log_file_path):
+            raise ValueError(f"Log file path is a directory, not a file: {log_file_path}")
+        
+        file_handler = RotatingFileHandler(
+            log_file_path,
+            maxBytes=self.log_max_bytes,
+            backupCount=self.log_backup_count,
+            encoding='utf-8'
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # 记录日志配置信息
+        logger = logging.getLogger(__name__)
+        logger.info(f"日志系统已初始化 - 级别: {self.log_level}, 文件: {log_file_path}")
+
+    def get_log_file_path(self) -> str:
+        """获取日志文件完整路径"""
+        return os.path.join(self.log_dir, self.log_file)
     
     def is_production(self) -> bool:
         """判断是否为生产环境"""
