@@ -15,9 +15,9 @@ class SimpleTemplateService:
             
         self.template_db_service = TemplateDatabaseService(db_path)
         
-    def get_available_templates(self) -> List[Dict[str, Any]]:
+    async def get_available_templates(self) -> List[Dict[str, Any]]:
         """获取可用模板列表"""
-        templates_dict = self.template_db_service.get_all_templates()
+        templates_dict = await self.template_db_service.get_all_templates()
         templates_list = []
         for template_id, template_config in templates_dict.items():
             template_with_id = {
@@ -27,9 +27,9 @@ class SimpleTemplateService:
             templates_list.append(template_with_id)
         return templates_list
 
-    def get_template_by_id(self, template_id: str) -> Optional[Dict[str, Any]]:
+    async def get_template_by_id(self, template_id: str) -> Optional[Dict[str, Any]]:
         """根据ID获取模板详情"""
-        templates_dict = self.template_db_service.get_all_templates()
+        templates_dict = await self.template_db_service.get_all_templates()
         template_config = templates_dict.get(template_id)
         if not template_config:
             return None
@@ -38,9 +38,9 @@ class SimpleTemplateService:
             **template_config
         }
             
-    def generate_analysis_prompt(self, template_id: str) -> str:
+    async def generate_analysis_prompt(self, template_id: str) -> str:
         """生成分析提示词"""
-        templates_dict = self.template_db_service.get_all_templates()
+        templates_dict = await self.template_db_service.get_all_templates()
         template = templates_dict.get(template_id)
             
         if not template:
@@ -97,10 +97,10 @@ class SimpleTemplateService:
         
         return prompt
     
-    def analyze_with_template(self, template_id: str) -> Dict[str, Any]:
+    async def analyze_with_template(self, template_id: str) -> Dict[str, Any]:
         """使用模板分析数据"""
         try:
-            prompt = self.generate_analysis_prompt(template_id)
+            prompt = await self.generate_analysis_prompt(template_id)
             return {
                 "success": True,
                 "analysis_prompt": prompt

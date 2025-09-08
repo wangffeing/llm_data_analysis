@@ -22,8 +22,20 @@ async def get_analysis_templates():
     """获取分析模板列表"""
     try:
         template_service = SimpleTemplateService()
-        templates = template_service.get_available_templates()
+        templates = await template_service.get_available_templates()
         return {"templates": templates}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/template/{template_id}")
+async def get_template_detail(template_id: str):
+    """获取模板详情"""
+    try:
+        template_service = SimpleTemplateService()
+        template = await template_service.get_template_by_id(template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        return template
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -32,7 +44,7 @@ async def generate_template_prompt(request: TemplatePromptRequest):
     """生成模板分析提示"""
     try:
         template_service = SimpleTemplateService()
-        result = template_service.analyze_with_template(request.template_id)
+        result = await template_service.analyze_with_template(request.template_id)
         
         if result["success"]:
             return {
@@ -120,22 +132,5 @@ async def delete_custom_template(
                 "success": False,
                 "error": "模板不存在或删除失败"
             }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/template/{template_id}")
-async def get_template_detail(template_id: str):
-    """获取模板详情"""
-    try:
-        template_service = SimpleTemplateService()
-        template = template_service.get_template_by_id(template_id)
-        
-        if template:
-            return {
-                "success": True,
-                "template": template
-            }
-        else:
-            raise HTTPException(status_code=404, detail="模板不存在")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
