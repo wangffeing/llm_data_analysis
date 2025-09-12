@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # 后端 API 服务
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: llm_data_analysis-api_v5
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_CONNECTION_STRING=opengauss://og_fenxi:henz5u4wTqfR%Cu6@10.126.246.168:25400/fenxi
+      - USE_DATABASE_CONFIG=true
+      - CONFIG_DB_PATH=/app/config_database.db  # 容器内的绝对路径
+      - ENABLE_AUTH=true
+      - ADMIN_API_KEY=admin-key-10086
+      - DASHSCOPE_API_KEY=sk-081340f2de3547508f206da7ef40376e
+      - LINGYUN_API_KEY=EQ0K34SR/R1DY-CKPU-DH8G-8GOS
+      - SSE_BATCH_INTERVAL=0.3
+      - SSE_MAX_BATCH_SIZE=8
+      - SSE_MAX_BUFFER_SIZE=100
+      - SSE_HEARTBEAT_INTERVAL=30
+    volumes:
+      - api_data:/app/data
+      - api_logs:/app/logs
+      - ./api/config_database.db:/app/config_database.db:ro  # 正确的挂载路径
+    networks:
+      - llm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 前端 Web 服务保持不变
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: llm-analysis-web_v5
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - llm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/analysis/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  llm-network:
+    driver: bridge
+volumes:
+  api_data:
+    driver: local
+  api_logs:
+    driver: local

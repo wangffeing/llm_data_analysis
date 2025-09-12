@@ -61,11 +61,12 @@ app = FastAPI(
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://10.120.83.135:18000",
-        "http://10.120.83.135:18000/analysis",  # 添加新的路径
-    ],
+    # allow_origins=[
+    #     "http://localhost:3000",
+    #     "http://10.120.83.135:18000",
+    #     "http://10.120.83.135:18000/analysis",  # 添加新的路径
+    # ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
